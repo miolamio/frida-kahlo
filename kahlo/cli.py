@@ -121,5 +121,131 @@ def install(
         raise typer.Exit(1)
 
 
+@app.command(name="frida-start")
+def frida_start():
+    """Start frida-server with stealth (random port)."""
+    from kahlo.device.adb import ADB, ADBError
+    from kahlo.device.frida_server import FridaServer
+    from kahlo.stealth.manager import StealthManager
+
+    adb = ADB()
+
+    try:
+        devices = adb.devices()
+    except ADBError as e:
+        console.print(f"[red]ADB error: {e}[/red]")
+        raise typer.Exit(1)
+
+    if not devices:
+        console.print("[red]No devices connected[/red]")
+        raise typer.Exit(1)
+
+    adb = ADB(serial=devices[0].serial)
+    fs = FridaServer(adb)
+    manager = StealthManager(adb, fs)
+
+    console.print("Starting frida-server with stealth...")
+    try:
+        manager.start()
+        console.print(f"[green]frida-server started on port {manager.port}[/green]")
+    except Exception as e:
+        console.print(f"[red]Failed to start: {e}[/red]")
+        raise typer.Exit(1)
+
+
+@app.command(name="frida-stop")
+def frida_stop():
+    """Stop frida-server and clean up port forwarding."""
+    import subprocess
+    from kahlo.device.adb import ADB, ADBError
+    from kahlo.device.frida_server import FridaServer
+
+    adb = ADB()
+
+    try:
+        devices = adb.devices()
+    except ADBError as e:
+        console.print(f"[red]ADB error: {e}[/red]")
+        raise typer.Exit(1)
+
+    if not devices:
+        console.print("[red]No devices connected[/red]")
+        raise typer.Exit(1)
+
+    adb = ADB(serial=devices[0].serial)
+    fs = FridaServer(adb)
+
+    console.print("Stopping frida-server...")
+    fs.stop()
+
+    # Clean up ADB port forwards
+    try:
+        subprocess.run(
+            ["adb", "-s", devices[0].serial, "forward", "--remove", "tcp:27042"],
+            capture_output=True, timeout=5,
+        )
+    except Exception:
+        pass
+
+    console.print("[green]frida-server stopped[/green]")
+
+
+@app.command(name="stealth-check")
+def stealth_check(
+    package: str = typer.Argument(help="Package name to check"),
+):
+    """Check if app detects Frida (spawn and see if it crashes)."""
+    import subprocess
+    from kahlo.device.adb import ADB, ADBError
+    from kahlo.device.frida_server import FridaServer
+    from kahlo.stealth.checker import check_detection
+
+    adb = ADB()
+
+    try:
+        devices = adb.devices()
+    except ADBError as e:
+        console.print(f"[red]ADB error: {e}[/red]")
+        raise typer.Exit(1)
+
+    if not devices:
+        console.print("[red]No devices connected[/red]")
+        raise typer.Exit(1)
+
+    adb = ADB(serial=devices[0].serial)
+    fs = FridaServer(adb)
+
+    # Determine if we need to use remote device (stealth port forwarding)
+    use_remote = False
+    if fs.is_running():
+        try:
+            fwd_cmd = ["adb", "-s", devices[0].serial, "forward", "--list"]
+            fwd_result = subprocess.run(fwd_cmd, capture_output=True, text=True, timeout=5)
+            for line in fwd_result.stdout.splitlines():
+                if "tcp:27042" in line and devices[0].serial in line:
+                    # ADB forward is active — server is on a custom stealth port
+                    use_remote = True
+                    break
+        except Exception:
+            pass
+    else:
+        # No frida-server running — start on default port
+        fs.start()
+
+    console.print(f"Checking Frida detection for [cyan]{package}[/cyan]...")
+    result = check_detection(
+        package=package,
+        device_id=devices[0].serial,
+        use_remote=use_remote,
+    )
+
+    if result["status"] == "clean":
+        console.print("[green]No detection: app survived with Frida attached[/green]")
+    elif result["status"] == "crashed":
+        console.print(f"[red]Detection likely: {result.get('detail', 'app crashed')}[/red]")
+    else:
+        console.print(f"[yellow]Error during check: {result.get('detail', 'unknown')}[/yellow]")
+
+
 if __name__ == "__main__":
     app()
