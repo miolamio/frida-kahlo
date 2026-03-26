@@ -340,6 +340,126 @@ def scan(
             console.print(f"  ... and {len(stats['unique_endpoints']) - 20} more")
 
 
+@app.command()
+def report(
+    session_path: str = typer.Argument(help="Path to session JSON file"),
+    output_dir: str = typer.Option(None, "--output", "-o", help="Output directory (default: next to session file)"),
+):
+    """Generate analysis report from a session JSON file."""
+    import json
+    import os
+
+    from kahlo.analyze.netmodel import analyze_netmodel
+    from kahlo.analyze.patterns import analyze_patterns
+    from kahlo.analyze.recon import analyze_recon
+    from kahlo.analyze.traffic import analyze_traffic
+    from kahlo.analyze.vault import analyze_vault
+    from kahlo.report.api_spec import generate_api_spec
+    from kahlo.report.markdown import generate_markdown
+    from kahlo.report.replay import generate_replay
+
+    # Load session
+    if not os.path.exists(session_path):
+        console.print(f"[red]Session file not found: {session_path}[/red]")
+        raise typer.Exit(1)
+
+    console.print(f"Loading session: [cyan]{session_path}[/cyan]")
+    with open(session_path, "r", encoding="utf-8") as f:
+        session = json.load(f)
+
+    events = session.get("events", [])
+    package = session.get("package", "unknown")
+    session_id = session.get("session_id", "unknown")
+
+    console.print(f"  Package: {package}")
+    console.print(f"  Events: {len(events)}")
+
+    # Determine output directory
+    if not output_dir:
+        output_dir = os.path.join(os.path.dirname(session_path) or ".", f"{session_id}_report")
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Run all analyzers
+    console.print("\n[bold]Running analyzers...[/bold]")
+
+    console.print("  Traffic analysis...", end="")
+    traffic = analyze_traffic(events, package)
+    console.print(f" [green]{len(traffic.servers)} servers, {len(traffic.endpoints)} endpoints[/green]")
+
+    console.print("  Vault analysis...", end="")
+    vault = analyze_vault(events, package)
+    console.print(f" [green]{len(vault.secrets)} secrets, {len(vault.prefs_files)} pref files[/green]")
+
+    console.print("  Recon analysis...", end="")
+    recon = analyze_recon(events)
+    console.print(f" [green]appetite={recon.fingerprint_appetite}/100[/green]")
+
+    console.print("  Netmodel analysis...", end="")
+    netmodel = analyze_netmodel(events)
+    console.print(f" [green]{netmodel.total_hash_ops} hashes, {len(netmodel.hmac_keys)} HMAC keys[/green]")
+
+    console.print("  Pattern detection...", end="")
+    traffic_hosts = [s.host for s in traffic.servers]
+    patterns = analyze_patterns(events, traffic_hosts)
+    console.print(f" [green]{len(patterns.sdks)} SDKs detected[/green]")
+
+    # Generate reports
+    console.print("\n[bold]Generating reports...[/bold]")
+
+    # Markdown report
+    console.print("  report.md...", end="")
+    md_content = generate_markdown(session, traffic, vault, recon, netmodel, patterns)
+    md_path = os.path.join(output_dir, "report.md")
+    with open(md_path, "w", encoding="utf-8") as f:
+        f.write(md_content)
+    console.print(f" [green]{len(md_content):,} bytes[/green]")
+
+    # API spec
+    console.print("  api-spec.json...", end="")
+    spec_content = generate_api_spec(session, traffic, vault, netmodel)
+    spec_path = os.path.join(output_dir, "api-spec.json")
+    with open(spec_path, "w", encoding="utf-8") as f:
+        f.write(spec_content)
+    console.print(f" [green]{len(spec_content):,} bytes[/green]")
+
+    # Replay scripts
+    console.print("  replay/...", end="")
+    replay_dir = os.path.join(output_dir, "replay")
+    replay_files = generate_replay(replay_dir, traffic, vault, netmodel, package)
+    console.print(f" [green]{len(replay_files)} files[/green]")
+
+    # Print summary
+    console.print(f"\n[green]Reports saved to: {output_dir}[/green]")
+    console.print()
+
+    summary = Table(title="Report Summary")
+    summary.add_column("Item", style="cyan")
+    summary.add_column("Detail", style="green")
+
+    summary.add_row("Servers", str(len(traffic.servers)))
+    summary.add_row("Endpoints", str(len(traffic.endpoints)))
+    summary.add_row("Secrets", str(len(vault.secrets)))
+    summary.add_row("Pref Files", str(len(vault.prefs_files)))
+    summary.add_row("SDKs", str(len(patterns.sdks)))
+    summary.add_row("Hash Operations", str(netmodel.total_hash_ops))
+    summary.add_row("Fingerprint Appetite", f"{recon.fingerprint_appetite}/100")
+
+    console.print(summary)
+
+    # Print server inventory
+    if traffic.servers:
+        console.print("\n[cyan]Server Inventory:[/cyan]")
+        for s in traffic.servers:
+            console.print(f"  {s.host} ({s.ip}) - {s.role} [{s.connection_count} connections]")
+
+    # Print detected SDKs
+    if patterns.sdks:
+        console.print("\n[cyan]Detected SDKs:[/cyan]")
+        for sdk in patterns.sdks:
+            version = f" v{sdk.version}" if sdk.version else ""
+            console.print(f"  {sdk.name}{version} ({sdk.category})")
+
+
 @app.command(name="stealth-check")
 def stealth_check(
     package: str = typer.Argument(help="Package name to check"),
