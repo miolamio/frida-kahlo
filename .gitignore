@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+.venv/
+sessions/
+*.apk
+*.xapk
+*.apkm
+.DS_Store
