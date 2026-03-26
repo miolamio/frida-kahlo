@@ -69,10 +69,48 @@ class Session:
                 },
             })
 
+    def event_stats(self) -> dict[str, Any]:
+        """Return event statistics grouped by module and type."""
+        by_module: dict[str, int] = {}
+        by_type: dict[str, int] = {}
+        by_module_type: dict[str, dict[str, int]] = {}
+
+        for event in self.events:
+            module = event.get("module", "unknown")
+            etype = event.get("type", "unknown")
+
+            by_module[module] = by_module.get(module, 0) + 1
+            key = f"{module}.{etype}"
+            by_type[key] = by_type.get(key, 0) + 1
+
+            if module not in by_module_type:
+                by_module_type[module] = {}
+            by_module_type[module][etype] = by_module_type[module].get(etype, 0) + 1
+
+        # Extract unique endpoints from traffic events
+        endpoints: set[str] = set()
+        for event in self.events:
+            if event.get("module") == "traffic" and event.get("type") in ("http_request", "http_response"):
+                url = event.get("data", {}).get("url", "")
+                if url:
+                    # Normalize: strip query params for grouping
+                    base = url.split("?")[0]
+                    endpoints.add(base)
+
+        return {
+            "total": len(self.events),
+            "by_module": by_module,
+            "by_type": by_type,
+            "by_module_type": by_module_type,
+            "unique_endpoints": sorted(endpoints),
+        }
+
     def save(self) -> str:
         """Save session to JSON file. Returns the file path."""
         os.makedirs(self.output_dir, exist_ok=True)
         path = os.path.join(self.output_dir, f"{self.session_id}.json")
+
+        stats = self.event_stats()
 
         data = {
             "session_id": self.session_id,
@@ -80,6 +118,7 @@ class Session:
             "started_at": self.started_at,
             "ended_at": datetime.now(timezone.utc).isoformat(),
             "event_count": len(self.events),
+            "stats": stats,
             "metadata": self.metadata,
             "events": self.events,
         }

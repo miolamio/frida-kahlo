@@ -190,6 +190,156 @@ def frida_stop():
     console.print("[green]frida-server stopped[/green]")
 
 
+@app.command()
+def scan(
+    package: str = typer.Argument(help="Package name to scan"),
+    duration: int = typer.Option(60, "--duration", "-d", help="Scan duration in seconds"),
+):
+    """Scan an app: spawn with stealth + hooks, collect events for N seconds."""
+    import time
+    from rich.live import Live
+    from rich.panel import Panel
+
+    from kahlo.device.adb import ADB, ADBError
+    from kahlo.device.frida_server import FridaServer
+    from kahlo.instrument.engine import FridaEngine
+    from kahlo.instrument.loader import ScriptLoader
+    from kahlo.instrument.session import Session
+    from kahlo.stealth.manager import StealthManager
+
+    # --- 1. Setup device + frida-server ---
+    adb = ADB()
+    try:
+        devices = adb.devices()
+    except ADBError as e:
+        console.print(f"[red]ADB error: {e}[/red]")
+        raise typer.Exit(1)
+
+    if not devices:
+        console.print("[red]No devices connected[/red]")
+        raise typer.Exit(1)
+
+    adb = ADB(serial=devices[0].serial)
+    fs = FridaServer(adb)
+
+    if not fs.is_running():
+        console.print("Starting frida-server...")
+        fs.start()
+        time.sleep(1)
+
+    stealth = StealthManager(adb, fs)
+    engine = FridaEngine(stealth)
+
+    # --- 2. Compose scripts ---
+    loader = ScriptLoader()
+    console.print(f"[cyan]Composing scripts for {package}...[/cyan]")
+
+    # Build bypass list (check what exists)
+    bypass_scripts = ["bypass/stealth", "bypass/ssl_unpin"]
+    hook_scripts = ["common", "hooks/traffic", "hooks/vault", "hooks/recon", "hooks/netmodel"]
+
+    # Add discovery as extra source
+    extra_scripts = []
+    available = loader.list_scripts()
+    if "discovery" in available:
+        extra_scripts.append("discovery")
+
+    # Compose full script: common first (provides sendEvent etc.), then bypass, then hooks
+    # Note: compose() puts bypass first, then hooks. We need common.js in hooks so sendEvent is available.
+    script_source = loader.compose(
+        bypass=bypass_scripts,
+        hooks=hook_scripts + extra_scripts,
+    )
+
+    console.print(f"  Script size: {len(script_source):,} bytes")
+
+    # --- 3. Create session ---
+    session = Session(package=package)
+
+    # --- 4. Spawn app with hooks ---
+    console.print(f"[green]Spawning {package}...[/green]")
+    try:
+        pid = engine.spawn(
+            package,
+            script_source=script_source,
+            on_message=session.on_message,
+        )
+        console.print(f"  PID: {pid}")
+    except Exception as e:
+        console.print(f"[red]Failed to spawn: {e}[/red]")
+        raise typer.Exit(1)
+
+    # --- 5. Collect events with live progress ---
+    console.print(f"\n[bold]Collecting events for {duration} seconds...[/bold]")
+    console.print("[dim]Interact with the app on the device to generate traffic.[/dim]\n")
+
+    try:
+        start_time = time.time()
+        with Live(console=console, refresh_per_second=2) as live:
+            while time.time() - start_time < duration:
+                elapsed = int(time.time() - start_time)
+                remaining = duration - elapsed
+                n_events = len(session.events)
+
+                # Build module counts for display
+                module_counts = {}
+                for ev in session.events:
+                    mod = ev.get("module", "?")
+                    module_counts[mod] = module_counts.get(mod, 0) + 1
+
+                counts_str = "  ".join(
+                    f"[cyan]{m}[/cyan]:{c}" for m, c in sorted(module_counts.items())
+                )
+
+                progress_bar = "#" * (elapsed * 40 // max(duration, 1))
+                progress_empty = "-" * (40 - len(progress_bar))
+
+                display = (
+                    f"[{progress_bar}{progress_empty}] {elapsed}s / {duration}s  "
+                    f"({remaining}s remaining)\n\n"
+                    f"Events: [bold green]{n_events}[/bold green]\n"
+                    f"{counts_str}"
+                )
+                live.update(Panel(display, title="Scanning", border_style="blue"))
+
+                time.sleep(0.5)
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Scan interrupted by user[/yellow]")
+
+    # --- 6. Cleanup ---
+    console.print("\nStopping...")
+    engine.cleanup()
+
+    # --- 7. Save session ---
+    path = session.save()
+    console.print(f"\n[green]Session saved: {path}[/green]")
+
+    # --- 8. Print summary ---
+    stats = session.event_stats()
+
+    summary = Table(title="Scan Summary")
+    summary.add_column("Module", style="cyan")
+    summary.add_column("Events", justify="right", style="green")
+    summary.add_column("Types", style="dim")
+
+    for module, count in sorted(stats["by_module"].items()):
+        types = stats["by_module_type"].get(module, {})
+        types_str = ", ".join(f"{t}:{c}" for t, c in sorted(types.items()))
+        summary.add_row(module, str(count), types_str)
+
+    summary.add_row("", "", "")
+    summary.add_row("[bold]TOTAL[/bold]", f"[bold]{stats['total']}[/bold]", "")
+
+    console.print(summary)
+
+    if stats["unique_endpoints"]:
+        console.print(f"\n[cyan]Unique endpoints ({len(stats['unique_endpoints'])}):[/cyan]")
+        for ep in stats["unique_endpoints"][:20]:
+            console.print(f"  {ep}")
+        if len(stats["unique_endpoints"]) > 20:
+            console.print(f"  ... and {len(stats['unique_endpoints']) - 20} more")
+
+
 @app.command(name="stealth-check")
 def stealth_check(
     package: str = typer.Argument(help="Package name to check"),
