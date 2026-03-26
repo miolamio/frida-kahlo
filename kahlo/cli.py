@@ -460,6 +460,102 @@ def report(
             console.print(f"  {sdk.name}{version} ({sdk.category})")
 
 
+@app.command(name="analyze")
+def analyze_cmd(
+    target: str = typer.Argument(help="App name or package name (com.xxx.yyy)"),
+    duration: int = typer.Option(60, "--duration", "-d", help="Scan duration in seconds"),
+    skip_fetch: bool = typer.Option(False, "--skip-fetch", help="Skip APK download (assume installed)"),
+    skip_static: bool = typer.Option(False, "--skip-static", help="Skip jadx decompilation"),
+):
+    """Full pipeline: fetch -> install -> scan -> analyze -> report."""
+    from kahlo.pipeline import Pipeline, PipelineError
+
+    pipeline = Pipeline(console=console)
+
+    try:
+        report_dir = pipeline.analyze(
+            target=target,
+            duration=duration,
+            skip_fetch=skip_fetch,
+            skip_static=skip_static,
+        )
+        console.print(f"\n[bold green]Analysis complete: {report_dir}[/bold green]")
+    except PipelineError as e:
+        console.print(f"\n[red]Pipeline error: {e}[/red]")
+        raise typer.Exit(1)
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Analysis interrupted[/yellow]")
+        raise typer.Exit(1)
+
+
+@app.command(name="fetch")
+def fetch_cmd(
+    query: str = typer.Argument(help="App name to search for"),
+    output_dir: str = typer.Option(None, "--output", "-o", help="Output directory"),
+):
+    """Download APK from mirror sites (APKPure, APKCombo)."""
+    import asyncio
+
+    from kahlo.acquire.fetcher import APKFetcher
+
+    console.print(f"Searching for: [cyan]{query}[/cyan]")
+
+    fetcher = APKFetcher()
+    try:
+        path = asyncio.run(fetcher.fetch(query, output_dir))
+        if path:
+            console.print(f"[green]Downloaded: {path}[/green]")
+        else:
+            console.print("[red]Download failed from all sources[/red]")
+            raise typer.Exit(1)
+    except Exception as e:
+        console.print(f"[red]Fetch error: {e}[/red]")
+        raise typer.Exit(1)
+
+
+@app.command(name="manifest")
+def manifest_cmd(
+    path: str = typer.Argument(help="Path to APK file or XAPK directory"),
+):
+    """Parse and display AndroidManifest.xml info."""
+    from kahlo.prepare.manifest import ManifestAnalyzer
+
+    analyzer = ManifestAnalyzer()
+    info = analyzer.analyze(path)
+
+    if not info.package_name:
+        console.print("[yellow]Could not parse manifest[/yellow]")
+        raise typer.Exit(1)
+
+    table = Table(title="Manifest Info")
+    table.add_column("Field", style="cyan")
+    table.add_column("Value", style="green")
+
+    table.add_row("Package", info.package_name or "?")
+    table.add_row("App Name", info.app_name or "?")
+    table.add_row("Version", f"{info.version_name or '?'} ({info.version_code or '?'})")
+    table.add_row("Min SDK", info.min_sdk or "?")
+    table.add_row("Target SDK", info.target_sdk or "?")
+    table.add_row("Permissions", str(len(info.permissions)))
+    table.add_row("Activities", str(len(info.activities)))
+    table.add_row("Services", str(len(info.services)))
+    table.add_row("Receivers", str(len(info.receivers)))
+    table.add_row("Cleartext", str(info.uses_cleartext))
+    table.add_row("Debuggable", str(info.debuggable))
+
+    console.print(table)
+
+    if info.permissions:
+        console.print(f"\n[cyan]Permissions ({len(info.permissions)}):[/cyan]")
+        for p in info.permissions:
+            console.print(f"  {p}")
+
+    if info.activities:
+        launcher = [a for a in info.activities if a.is_launcher]
+        if launcher:
+            console.print(f"\n[cyan]Launcher activity:[/cyan] {launcher[0].name}")
+
+
 @app.command(name="stealth-check")
 def stealth_check(
     package: str = typer.Argument(help="Package name to check"),
