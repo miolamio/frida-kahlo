@@ -115,14 +115,15 @@ class FridaEngine:
         self,
         script_source: str,
         on_message: Callable[[dict, Any], None] | None = None,
-        include_java_bridge: bool = True,
+        include_java_bridge: bool = False,
     ) -> None:
         """Inject a script into the current session.
 
         Args:
             script_source: JavaScript source code to inject
             on_message: Callback for script messages
-            include_java_bridge: Prepend Java bridge for frida 17.x compatibility (default True)
+            include_java_bridge: Prepend Java bridge for frida 17.x compatibility.
+                Defaults to False because ScriptLoader.compose() already prepends it.
         """
         if self._session is None:
             raise FridaEngineError("No active session — call spawn() or attach() first")

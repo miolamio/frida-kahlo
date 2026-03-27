@@ -507,7 +507,9 @@ class BodyDecoder:
             line = line.strip()
             if 'name="' in line:
                 start = line.index('name="') + 6
-                end = line.index('"', start)
+                end = line.find('"', start)
+                if end == -1:
+                    continue
                 fields.append(line[start:end])
 
         return DecodedBody(

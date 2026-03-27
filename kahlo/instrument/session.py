@@ -105,12 +105,23 @@ class Session:
             "unique_endpoints": sorted(endpoints),
         }
 
-    def save(self) -> str:
-        """Save session to JSON file. Returns the file path."""
+    def save(self, max_events: int | None = None) -> str:
+        """Save session to JSON file. Returns the file path.
+
+        Args:
+            max_events: If set, limit the number of events saved to this value
+                (keeps the last N events). Default None = save all events.
+        """
         os.makedirs(self.output_dir, exist_ok=True)
         path = os.path.join(self.output_dir, f"{self.session_id}.json")
 
         stats = self.event_stats()
+
+        events_to_save = self.events
+        truncated = False
+        if max_events is not None and len(self.events) > max_events:
+            events_to_save = self.events[-max_events:]
+            truncated = True
 
         data = {
             "session_id": self.session_id,
@@ -118,9 +129,11 @@ class Session:
             "started_at": self.started_at,
             "ended_at": datetime.now(timezone.utc).isoformat(),
             "event_count": len(self.events),
+            "events_saved": len(events_to_save),
+            "events_truncated": truncated,
             "stats": stats,
             "metadata": self.metadata,
-            "events": self.events,
+            "events": events_to_save,
         }
 
         with open(path, "w", encoding="utf-8") as f:

@@ -319,8 +319,15 @@ def analyze_vault(events: list[dict[str, Any]], package: str | None = None) -> V
 
         elif etype == "pref_write":
             total_writes += 1
+            file = data.get("file", "unknown")
             key = data.get("key", "")
             value = data.get("value")
+
+            if file not in pref_files_map:
+                pref_files_map[file] = {"reads": 0, "writes": 0}
+                pref_keys_map[file] = set()
+            pref_files_map[file]["writes"] += 1
+            pref_keys_map[file].add(key)
 
         elif etype == "file_write":
             path = data.get("path", "")

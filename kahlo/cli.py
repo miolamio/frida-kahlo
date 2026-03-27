@@ -133,23 +133,23 @@ def frida_start():
     try:
         devices = adb.devices()
     except ADBError as e:
-        console.print(f"[red]ADB error: {e}[/red]")
+        console.print(f"[red]Ошибка ADB: {e}[/red]")
         raise typer.Exit(1)
 
     if not devices:
-        console.print("[red]No devices connected[/red]")
+        console.print("[red]Нет подключённых устройств[/red]")
         raise typer.Exit(1)
 
     adb = ADB(serial=devices[0].serial)
     fs = FridaServer(adb)
     manager = StealthManager(adb, fs)
 
-    console.print("Starting frida-server with stealth...")
+    console.print("Запускаю frida-server в режиме stealth...")
     try:
         manager.start()
-        console.print(f"[green]frida-server started on port {manager.port}[/green]")
+        console.print(f"[green]frida-server запущен на порту {manager.port}[/green]")
     except Exception as e:
-        console.print(f"[red]Failed to start: {e}[/red]")
+        console.print(f"[red]Не удалось запустить: {e}[/red]")
         raise typer.Exit(1)
 
 
@@ -165,17 +165,17 @@ def frida_stop():
     try:
         devices = adb.devices()
     except ADBError as e:
-        console.print(f"[red]ADB error: {e}[/red]")
+        console.print(f"[red]Ошибка ADB: {e}[/red]")
         raise typer.Exit(1)
 
     if not devices:
-        console.print("[red]No devices connected[/red]")
+        console.print("[red]Нет подключённых устройств[/red]")
         raise typer.Exit(1)
 
     adb = ADB(serial=devices[0].serial)
     fs = FridaServer(adb)
 
-    console.print("Stopping frida-server...")
+    console.print("Останавливаю frida-server...")
     fs.stop()
 
     # Clean up ADB port forwards
@@ -187,7 +187,7 @@ def frida_stop():
     except Exception:
         pass
 
-    console.print("[green]frida-server stopped[/green]")
+    console.print("[green]frida-server остановлен[/green]")
 
 
 @app.command()
@@ -213,18 +213,18 @@ def scan(
     try:
         devices = adb.devices()
     except ADBError as e:
-        console.print(f"[red]ADB error: {e}[/red]")
+        console.print(f"[red]Ошибка ADB: {e}[/red]")
         raise typer.Exit(1)
 
     if not devices:
-        console.print("[red]No devices connected[/red]")
+        console.print("[red]Нет подключённых устройств[/red]")
         raise typer.Exit(1)
 
     adb = ADB(serial=devices[0].serial)
     fs = FridaServer(adb)
 
     if not fs.is_running():
-        console.print("Starting frida-server...")
+        console.print("Запускаю frida-server...")
         fs.start()
         time.sleep(1)
 
@@ -233,9 +233,11 @@ def scan(
 
     # --- Auth capture mode: clear app data for fresh login ---
     if auth_capture:
-        console.print(f"\n[bold yellow]AUTH CAPTURE MODE[/bold yellow]")
+        console.print(f"\n[bold yellow]РЕЖИМ ЗАХВАТА АВТОРИЗАЦИИ[/bold yellow]")
         console.print(f"Очищаю данные {package}...")
         try:
+            from kahlo.device.adb import validate_shell_arg
+            validate_shell_arg(package, "имя пакета")
             adb.shell(f"pm clear {package}")
             console.print(f"  [green]Данные очищены[/green]")
         except Exception as e:
@@ -244,7 +246,7 @@ def scan(
 
     # --- 2. Compose scripts ---
     loader = ScriptLoader()
-    console.print(f"[cyan]Composing scripts for {package}...[/cyan]")
+    console.print(f"[cyan]Собираю скрипты для {package}...[/cyan]")
 
     # Build bypass list (check what exists)
     bypass_scripts = ["bypass/stealth", "bypass/ssl_unpin"]
@@ -263,7 +265,7 @@ def scan(
         hooks=hook_scripts + extra_scripts,
     )
 
-    console.print(f"  Script size: {len(script_source):,} bytes")
+    console.print(f"  Размер скрипта: {len(script_source):,} байт")
 
     # --- 3. Create session ---
     session = Session(package=package)
@@ -271,7 +273,7 @@ def scan(
         session.metadata["auth_capture"] = True
 
     # --- 4. Spawn app with hooks ---
-    console.print(f"[green]Spawning {package}...[/green]")
+    console.print(f"[green]Запускаю {package}...[/green]")
     try:
         pid = engine.spawn(
             package,
@@ -280,14 +282,14 @@ def scan(
         )
         console.print(f"  PID: {pid}")
     except Exception as e:
-        console.print(f"[red]Failed to spawn: {e}[/red]")
+        console.print(f"[red]Не удалось запустить: {e}[/red]")
         raise typer.Exit(1)
 
     # --- 5. Collect events ---
     if auth_capture:
         # Auth capture mode: run until Ctrl+C
         console.print(f"\n[bold yellow]Залогиньтесь в приложение. Нажмите Ctrl+C когда закончите.[/bold yellow]")
-        console.print("[dim]Auth events will be highlighted.[/dim]\n")
+        console.print("[dim]Авторизационные события будут подсвечены.[/dim]\n")
 
         try:
             start_time = time.time()
@@ -324,11 +326,11 @@ def scan(
 
                     time.sleep(0.5)
         except KeyboardInterrupt:
-            console.print("\n[yellow]Auth capture stopped[/yellow]")
+            console.print("\n[yellow]Захват авторизации остановлен[/yellow]")
     else:
         # Standard scan mode
-        console.print(f"\n[bold]Collecting events for {duration} seconds...[/bold]")
-        console.print("[dim]Interact with the app on the device to generate traffic.[/dim]\n")
+        console.print(f"\n[bold]Собираю события {duration} секунд...[/bold]")
+        console.print("[dim]Взаимодействуйте с приложением на устройстве.[/dim]\n")
 
         try:
             start_time = time.time()
@@ -361,15 +363,15 @@ def scan(
 
                     time.sleep(0.5)
         except KeyboardInterrupt:
-            console.print("\n[yellow]Scan interrupted by user[/yellow]")
+            console.print("\n[yellow]Сканирование прервано[/yellow]")
 
     # --- 6. Cleanup ---
-    console.print("\nStopping...")
+    console.print("\nОстанавливаю...")
     engine.cleanup()
 
     # --- 7. Save session ---
     path = session.save()
-    console.print(f"\n[green]Session saved: {path}[/green]")
+    console.print(f"\n[green]Сессия сохранена: {path}[/green]")
 
     # --- 8. Print summary ---
     stats = session.event_stats()
@@ -408,17 +410,17 @@ def _print_auth_summary(events: list, console_obj) -> None:
     auth_report = analyze_auth(events)
 
     if auth_report.has_auth_flow:
-        console_obj.print(f"\n[bold yellow]Auth Flow Detected[/bold yellow]")
-        console_obj.print(f"  Auth steps: {len(auth_report.auth_steps)}")
+        console_obj.print(f"\n[bold yellow]Обнаружен поток авторизации[/bold yellow]")
+        console_obj.print(f"  Шагов авторизации: {len(auth_report.auth_steps)}")
         if auth_report.auth_url:
-            console_obj.print(f"  Auth URL: {auth_report.auth_url}")
+            console_obj.print(f"  URL авторизации: {auth_report.auth_url}")
         if auth_report.auth_method:
-            console_obj.print(f"  Method: {auth_report.auth_method}")
+            console_obj.print(f"  Метод: {auth_report.auth_method}")
         for step in auth_report.auth_steps:
             status = f" -> {step.response.status}" if step.response else ""
             console_obj.print(f"    [{step.step_type}] {step.request.method} {step.request.url}{status}")
     else:
-        console_obj.print(f"\n[dim]No auth flow steps detected in traffic[/dim]")
+        console_obj.print(f"\n[dim]Шаги авторизации не обнаружены в трафике[/dim]")
 
     if auth_report.jwt_tokens:
         console_obj.print(f"\n[bold yellow]JWT Tokens ({len(auth_report.jwt_tokens)})[/bold yellow]")
@@ -617,18 +619,18 @@ def monitor(
     try:
         devices = adb.devices()
     except ADBError as e:
-        console.print(f"[red]ADB error: {e}[/red]")
+        console.print(f"[red]Ошибка ADB: {e}[/red]")
         raise typer.Exit(1)
 
     if not devices:
-        console.print("[red]No devices connected[/red]")
+        console.print("[red]Нет подключённых устройств[/red]")
         raise typer.Exit(1)
 
     adb = ADB(serial=devices[0].serial)
     fs = FridaServer(adb)
 
     if not fs.is_running():
-        console.print("Starting frida-server...")
+        console.print("Запускаю frida-server...")
         fs.start()
         time.sleep(1)
 
@@ -637,7 +639,7 @@ def monitor(
 
     # --- 2. Compose scripts ---
     loader = ScriptLoader()
-    console.print(f"[cyan]Composing scripts for {package}...[/cyan]")
+    console.print(f"[cyan]Собираю скрипты для {package}...[/cyan]")
 
     bypass_scripts = ["bypass/stealth", "bypass/ssl_unpin"]
     hook_scripts = ["common", "hooks/traffic", "hooks/vault", "hooks/recon", "hooks/netmodel"]
@@ -652,16 +654,16 @@ def monitor(
         hooks=hook_scripts + extra_scripts,
     )
 
-    console.print(f"  Script size: {len(script_source):,} bytes")
+    console.print(f"  Размер скрипта: {len(script_source):,} байт")
 
     # --- 3. Create session + monitor ---
     session = Session(package=package)
     live_monitor = LiveMonitor(package=package, console=console)
 
     console.print(
-        "\n[bold]Starting live monitor...[/bold]"
+        "\n[bold]Запускаю мониторинг...[/bold]"
     )
-    console.print("[dim]Interact with the app on the device. Press Ctrl+C to stop.[/dim]\n")
+    console.print("[dim]Взаимодействуйте с приложением на устройстве. Ctrl+C для остановки.[/dim]\n")
 
     # --- 4. Run ---
     try:
@@ -671,7 +673,7 @@ def monitor(
             session=session,
         )
     except Exception as e:
-        console.print(f"\n[red]Monitor error: {e}[/red]")
+        console.print(f"\n[red]Ошибка мониторинга: {e}[/red]")
         engine.cleanup()
         raise typer.Exit(1)
 
@@ -695,12 +697,12 @@ def analyze_cmd(
             skip_fetch=skip_fetch,
             skip_static=skip_static,
         )
-        console.print(f"\n[bold green]Analysis complete: {report_dir}[/bold green]")
+        console.print(f"\n[bold green]Анализ завершён: {report_dir}[/bold green]")
     except PipelineError as e:
-        console.print(f"\n[red]Pipeline error: {e}[/red]")
+        console.print(f"\n[red]Ошибка пайплайна: {e}[/red]")
         raise typer.Exit(1)
     except KeyboardInterrupt:
-        console.print("\n[yellow]Analysis interrupted[/yellow]")
+        console.print("\n[yellow]Анализ прерван[/yellow]")
         raise typer.Exit(1)
 
 
@@ -714,18 +716,18 @@ def fetch_cmd(
 
     from kahlo.acquire.fetcher import APKFetcher
 
-    console.print(f"Searching for: [cyan]{query}[/cyan]")
+    console.print(f"Ищу: [cyan]{query}[/cyan]")
 
     fetcher = APKFetcher()
     try:
         path = asyncio.run(fetcher.fetch(query, output_dir))
         if path:
-            console.print(f"[green]Downloaded: {path}[/green]")
+            console.print(f"[green]Скачано: {path}[/green]")
         else:
-            console.print("[red]Download failed from all sources[/red]")
+            console.print("[red]Не удалось скачать ни из одного источника[/red]")
             raise typer.Exit(1)
     except Exception as e:
-        console.print(f"[red]Fetch error: {e}[/red]")
+        console.print(f"[red]Ошибка загрузки: {e}[/red]")
         raise typer.Exit(1)
 
 
@@ -787,11 +789,11 @@ def stealth_check(
     try:
         devices = adb.devices()
     except ADBError as e:
-        console.print(f"[red]ADB error: {e}[/red]")
+        console.print(f"[red]Ошибка ADB: {e}[/red]")
         raise typer.Exit(1)
 
     if not devices:
-        console.print("[red]No devices connected[/red]")
+        console.print("[red]Нет подключённых устройств[/red]")
         raise typer.Exit(1)
 
     adb = ADB(serial=devices[0].serial)
@@ -814,7 +816,7 @@ def stealth_check(
         # No frida-server running — start on default port
         fs.start()
 
-    console.print(f"Checking Frida detection for [cyan]{package}[/cyan]...")
+    console.print(f"Проверяю обнаружение Frida для [cyan]{package}[/cyan]...")
     result = check_detection(
         package=package,
         device_id=devices[0].serial,
@@ -822,11 +824,11 @@ def stealth_check(
     )
 
     if result["status"] == "clean":
-        console.print("[green]No detection: app survived with Frida attached[/green]")
+        console.print("[green]Не обнаружен: приложение работает с Frida[/green]")
     elif result["status"] == "crashed":
-        console.print(f"[red]Detection likely: {result.get('detail', 'app crashed')}[/red]")
+        console.print(f"[red]Вероятно обнаружен: {result.get('detail', 'приложение упало')}[/red]")
     else:
-        console.print(f"[yellow]Error during check: {result.get('detail', 'unknown')}[/yellow]")
+        console.print(f"[yellow]Ошибка проверки: {result.get('detail', 'неизвестно')}[/yellow]")
 
 
 @app.command(name="static")
@@ -839,10 +841,10 @@ def static_cmd(
     from kahlo.analyze.static import analyze_static
 
     if not os.path.isdir(jadx_dir):
-        console.print(f"[red]Directory not found: {jadx_dir}[/red]")
+        console.print(f"[red]Директория не найдена: {jadx_dir}[/red]")
         raise typer.Exit(1)
 
-    console.print(f"Scanning jadx output: [cyan]{jadx_dir}[/cyan]")
+    console.print(f"Сканирую jadx-вывод: [cyan]{jadx_dir}[/cyan]")
     report = analyze_static(jadx_dir)
 
     console.print(f"  Files scanned: {report.files_scanned}")
@@ -929,15 +931,15 @@ def aggregate_cmd(
     )
 
     if len(sessions) < 2:
-        console.print("[red]At least 2 session files required[/red]")
+        console.print("[red]Требуется минимум 2 файла сессий[/red]")
         raise typer.Exit(1)
 
     for path in sessions:
         if not os.path.exists(path):
-            console.print(f"[red]File not found: {path}[/red]")
+            console.print(f"[red]Файл не найден: {path}[/red]")
             raise typer.Exit(1)
 
-    console.print(f"Aggregating [cyan]{len(sessions)}[/cyan] sessions...")
+    console.print(f"Агрегирую [cyan]{len(sessions)}[/cyan] сессий...")
 
     aggregator = SessionAggregator()
     report = aggregator.aggregate(sessions)
@@ -962,7 +964,7 @@ def aggregate_cmd(
     with open(spec_path, "w", encoding="utf-8") as f:
         f.write(spec_content)
 
-    console.print(f"\n[green]Aggregated report saved to: {output_dir}[/green]")
+    console.print(f"\n[green]Агрегированный отчёт сохранён: {output_dir}[/green]")
     console.print(f"  Sessions: {len(report.sessions)}")
     console.print(f"  Endpoints: {len(report.all_endpoints)}")
     console.print(f"  Servers: {len(report.all_servers)}")
@@ -983,10 +985,10 @@ def diff_cmd(
 
     for path in (old_session, new_session):
         if not os.path.exists(path):
-            console.print(f"[red]File not found: {path}[/red]")
+            console.print(f"[red]Файл не найден: {path}[/red]")
             raise typer.Exit(1)
 
-    console.print(f"Comparing sessions...")
+    console.print(f"Сравниваю сессии...")
     console.print(f"  Old: [cyan]{old_session}[/cyan]")
     console.print(f"  New: [cyan]{new_session}[/cyan]")
 
@@ -998,7 +1000,7 @@ def diff_cmd(
     if output:
         with open(output, "w", encoding="utf-8") as f:
             f.write(md_content)
-        console.print(f"\n[green]Diff report saved to: {output}[/green]")
+        console.print(f"\n[green]Отчёт о различиях сохранён: {output}[/green]")
     else:
         # Print to console
         console.print()
@@ -1015,9 +1017,9 @@ def diff_cmd(
         + len(diff.removed_sdks)
     )
     if total_changes == 0:
-        console.print("\n[green]Sessions are identical[/green]")
+        console.print("\n[green]Сессии идентичны[/green]")
     else:
-        console.print(f"\n[yellow]{total_changes} change(s) detected[/yellow]")
+        console.print(f"\n[yellow]Обнаружено изменений: {total_changes}[/yellow]")
         if diff.new_endpoints:
             console.print(f"  + {len(diff.new_endpoints)} new endpoints")
         if diff.removed_endpoints:
@@ -1040,10 +1042,10 @@ def export_postman_cmd(
     from kahlo.report.postman import generate_postman_collection
 
     if not os.path.exists(session_path):
-        console.print(f"[red]Session file not found: {session_path}[/red]")
+        console.print(f"[red]Файл сессии не найден: {session_path}[/red]")
         raise typer.Exit(1)
 
-    console.print(f"Loading session: [cyan]{session_path}[/cyan]")
+    console.print(f"Загружаю сессию: [cyan]{session_path}[/cyan]")
     with open(session_path, "r", encoding="utf-8") as f:
         session = json.load(f)
 
@@ -1068,7 +1070,7 @@ def export_postman_cmd(
         len(item.get("item", [item])) if "item" in item else 1
         for item in collection.get("item", [])
     )
-    console.print(f"\n[green]Postman collection saved: {output}[/green]")
+    console.print(f"\n[green]Postman-коллекция сохранена: {output}[/green]")
     console.print(f"  Endpoints: {item_count}")
     console.print(f"  Servers: {len(collection.get('variable', []))}")
 

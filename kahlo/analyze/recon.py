@@ -35,6 +35,10 @@ def analyze_recon(events: list[dict[str, Any]]) -> ReconReport:
     device_info: dict[str, str] = {}
     telecom: dict[str, str] = {}
     network_info: list[dict[str, Any]] = []
+    ip_lookups: list[str] = []
+    competitor_probes: list[str] = []
+    seen_ip_lookups: set[str] = set()
+    seen_competitor_probes: set[str] = set()
     categories: set[str] = set()
     telecom_queries = 0
     network_queries = 0
@@ -78,10 +82,16 @@ def analyze_recon(events: list[dict[str, Any]]) -> ReconReport:
         elif etype == "ip_lookup":
             service = data.get("service", data.get("url", ""))
             categories.add("ip_lookup")
+            if service and service not in seen_ip_lookups:
+                seen_ip_lookups.add(service)
+                ip_lookups.append(service)
 
         elif etype == "competitor_probe":
             pkg = data.get("package", "")
             categories.add("competitor_probes")
+            if pkg and pkg not in seen_competitor_probes:
+                seen_competitor_probes.add(pkg)
+                competitor_probes.append(pkg)
 
         elif etype == "installed_apps":
             categories.add("installed_apps")
@@ -124,8 +134,8 @@ def analyze_recon(events: list[dict[str, Any]]) -> ReconReport:
         device_info=device_info,
         telecom=telecom,
         network_info=network_info,
-        ip_lookups=[],
-        competitor_probes=[],
+        ip_lookups=ip_lookups,
+        competitor_probes=competitor_probes,
         installed_apps_check="installed_apps" in categories,
         vpn_detected=True if "vpn" in categories else None,
         fingerprint_appetite=score,

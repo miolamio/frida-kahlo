@@ -107,10 +107,23 @@
 
             // Hook SharedPreferences.Editor write operations
             safeHook("android.app.SharedPreferencesImpl$EditorImpl", function(cls) {
+                // Helper: extract file name from EditorImpl via parent SharedPreferencesImpl.mFile
+                function getEditorFileName(editor) {
+                    try {
+                        // this$0 is the enclosing SharedPreferencesImpl instance
+                        var spi = editor.this$0.value;
+                        if (spi && spi.mFile && spi.mFile.value) {
+                            return spi.mFile.value.getName();
+                        }
+                    } catch(e) {}
+                    return "unknown";
+                }
+
                 // putString
                 try {
                     cls.putString.implementation = function(key, value) {
                         sendEvent("vault", "pref_write", {
+                            file: getEditorFileName(this),
                             key: key,
                             value: truncValue(value),
                             value_type: "string"
@@ -123,6 +136,7 @@
                 try {
                     cls.putInt.implementation = function(key, value) {
                         sendEvent("vault", "pref_write", {
+                            file: getEditorFileName(this),
                             key: key,
                             value: value,
                             value_type: "int"
@@ -135,6 +149,7 @@
                 try {
                     cls.putBoolean.implementation = function(key, value) {
                         sendEvent("vault", "pref_write", {
+                            file: getEditorFileName(this),
                             key: key,
                             value: value,
                             value_type: "boolean"
@@ -147,6 +162,7 @@
                 try {
                     cls.putLong.implementation = function(key, value) {
                         sendEvent("vault", "pref_write", {
+                            file: getEditorFileName(this),
                             key: key,
                             value: value,
                             value_type: "long"
@@ -159,6 +175,7 @@
                 try {
                     cls.putFloat.implementation = function(key, value) {
                         sendEvent("vault", "pref_write", {
+                            file: getEditorFileName(this),
                             key: key,
                             value: value,
                             value_type: "float"

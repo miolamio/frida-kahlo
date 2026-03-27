@@ -1,6 +1,7 @@
 """Markdown Report Generator — produce comprehensive analysis report."""
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from typing import Any
 
@@ -273,8 +274,6 @@ def generate_markdown(
             short_path = fw.path
             if package and f"/{package}/" in fw.path:
                 short_path = fw.path.split(f"/{package}/")[-1]
-            elif "/com.voltmobi.yakitoriya/" in fw.path:
-                short_path = fw.path.split("/com.voltmobi.yakitoriya/")[-1]
             lines.append(f"- `{short_path}` ({fw.size} bytes)")
         if len(vault.file_writes) > 20:
             lines.append(f"- ... and {len(vault.file_writes) - 20} more")
@@ -362,7 +361,6 @@ def generate_markdown(
             lines.append("")
             lines.append("Header:")
             lines.append("```json")
-            import json
             lines.append(json.dumps(jwt.header, indent=2))
             lines.append("```")
             lines.append("")

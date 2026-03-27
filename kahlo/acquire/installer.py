@@ -3,9 +3,9 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 import subprocess
 import tempfile
-from typing import Any
 
 from kahlo.acquire.extractor import APKExtractor, APKExtractorError, APKInfo
 from kahlo.device.adb import ADB, ADBError
@@ -100,7 +100,7 @@ class APKInstaller:
 
     def _detect_via_jadx(self, apk_path: str) -> str | None:
         """Use jadx to extract package name."""
-        jadx_path = "/opt/homebrew/bin/jadx"
+        jadx_path = shutil.which("jadx") or "/opt/homebrew/bin/jadx"
         if not os.path.exists(jadx_path):
             return None
 
@@ -136,8 +136,8 @@ class APKInstaller:
                     # This is a heuristic: look for common package patterns
                     text = data.decode("utf-8", errors="ignore")
                     import re
-                    # Look for package name pattern (com.xxx.yyy)
-                    matches = re.findall(r'(com\.[a-z][a-z0-9]*\.[a-z][a-z0-9.]*)', text)
+                    # Look for package name pattern (any.xxx.yyy)
+                    matches = re.findall(r'([a-z][a-z0-9]*\.[a-z][a-z0-9]*\.[a-z][a-z0-9.]*)', text)
                     if matches:
                         # Return the most likely one (shortest, most common pattern)
                         candidates = [m for m in matches if not m.endswith(".")]

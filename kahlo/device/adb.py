@@ -1,10 +1,30 @@
 """ADB wrapper for device communication."""
 from __future__ import annotations
 
+import re
+import shlex
 import subprocess
 from dataclasses import dataclass
 
 from pydantic import BaseModel
+
+
+# Regex for valid Android package names and ADB shell-safe identifiers
+_SAFE_SHELL_ARG_RE = re.compile(r'^[a-zA-Z0-9._/:@\-]+$')
+
+
+def validate_shell_arg(value: str, label: str = "argument") -> str:
+    """Validate that a string is safe for ADB shell interpolation.
+
+    Only allows alphanumeric characters, dots, underscores, slashes,
+    colons, at-signs, and hyphens. Raises ValueError otherwise.
+    """
+    if not value or not _SAFE_SHELL_ARG_RE.match(value):
+        raise ValueError(
+            f"Недопустимый {label}: {value!r} — "
+            "допускаются только буквы, цифры, точки, подчёркивания, слеши и дефисы"
+        )
+    return value
 
 
 class DeviceInfo(BaseModel):
@@ -62,7 +82,7 @@ class ADB:
 
     def shell(self, cmd: str, su: bool = False) -> str:
         if su:
-            cmd = f"su -c '{cmd}'"
+            cmd = f"su -c {shlex.quote(cmd)}"
         return self._cmd(["shell", cmd])
 
     def push(self, local: str, remote: str) -> str:

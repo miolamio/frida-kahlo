@@ -16,8 +16,9 @@ class DecompilerError(Exception):
 class Decompiler:
     """Wraps jadx for APK decompilation (runs in background)."""
 
-    def __init__(self, jadx_path: str = "/opt/homebrew/bin/jadx"):
-        self.jadx_path = jadx_path
+    def __init__(self, jadx_path: str | None = None):
+        import shutil
+        self.jadx_path = jadx_path or shutil.which("jadx") or "/opt/homebrew/bin/jadx"
 
     @property
     def available(self) -> bool:

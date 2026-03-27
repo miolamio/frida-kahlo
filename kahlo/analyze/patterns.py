@@ -1,6 +1,7 @@
 """SDK/Pattern Detector — identify known SDKs and services from all events."""
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -305,21 +306,18 @@ def _extract_version(rule: dict, ssl_text: str, pref_values: dict, file_text: st
 
     # Sentry: look for sentry_client=sentry.java.android/X.Y.Z in SSL
     if "sentry" in name:
-        import re
         m = re.search(r'sentry\.java\.android/(\d+\.\d+\.\d+)', ssl_text)
         if m:
             return m.group(1)
 
     # Pushwoosh: look for "v":"X.Y.Z" in SSL raw
     if "pushwoosh" in name:
-        import re
         m = re.search(r'"v"\s*:\s*"(\d+\.\d+\.\d+)"', ssl_text)
         if m:
             return m.group(1)
 
     # AppsFlyer: look for buildnumber=X.Y.Z or version in SSL/prefs
     if "appsflyer" in name:
-        import re
         m = re.search(r'buildnumber=(\d+\.\d+\.\d+)', ssl_text)
         if m:
             return m.group(1)
@@ -329,7 +327,6 @@ def _extract_version(rule: dict, ssl_text: str, pref_values: dict, file_text: st
 
     # Firebase Crashlytics: look for sdkVersion in file_write previews
     if "crashlytics" in name:
-        import re
         m = re.search(r'"sdkVersion"\s*:\s*"(\d+\.\d+\.\d+)"', file_text + " " + ssl_text)
         if m:
             return m.group(1)

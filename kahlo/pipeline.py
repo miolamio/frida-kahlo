@@ -7,7 +7,6 @@ import logging
 import os
 import time
 from enum import Enum
-from typing import Any
 
 from rich.console import Console
 from rich.live import Live
@@ -196,6 +195,8 @@ class Pipeline:
                 manifest_info = analyzer.analyze(apk_dir)
             else:
                 # Try to pull APK from device
+                from kahlo.device.adb import validate_shell_arg
+                validate_shell_arg(package_name, "package name")
                 apk_device_path = adb.shell(f"pm path {package_name}")
                 if apk_device_path and "package:" in apk_device_path:
                     device_apk = apk_device_path.split("package:")[1].strip().split("\n")[0]
@@ -332,6 +333,7 @@ class Pipeline:
 
         events = session.events
 
+        from kahlo.analyze.auth import analyze_auth
         from kahlo.analyze.netmodel import analyze_netmodel
         from kahlo.analyze.patterns import analyze_patterns
         from kahlo.analyze.recon import analyze_recon
@@ -358,6 +360,13 @@ class Pipeline:
         traffic_hosts = [s.host for s in traffic.servers]
         patterns = analyze_patterns(events, traffic_hosts)
         self._status(f"  {len(patterns.sdks)} SDKs detected", "green")
+
+        self._status("Auth flow analysis...")
+        auth = analyze_auth(events, package_name)
+        auth_str = f"{len(auth.auth_steps)} steps"
+        if auth.jwt_tokens:
+            auth_str += f", {len(auth.jwt_tokens)} JWTs"
+        self._status(f"  {auth_str}", "green")
 
         # Static analysis (from jadx output, if available)
         static_report = None
@@ -393,7 +402,7 @@ class Pipeline:
         self._status("Generating report.md...")
         md_content = generate_markdown(
             session_data, traffic, vault, recon, netmodel, patterns,
-            static=static_report,
+            auth=auth, static=static_report,
         )
         md_path = os.path.join(report_dir, "report.md")
         with open(md_path, "w", encoding="utf-8") as f:

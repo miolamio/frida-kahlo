@@ -85,6 +85,21 @@
         }
     } catch(e) {}
 
+    // === 1b. close() hook — clean up mapsFdSet to prevent memory leak ===
+    try {
+        var closePtr = Module.findExportByName("libc.so", "close");
+        if (closePtr) {
+            Interceptor.attach(closePtr, {
+                onEnter: function(args) {
+                    var fd = args[0].toInt32();
+                    if (fd in mapsFdSet) {
+                        delete mapsFdSet[fd];
+                    }
+                }
+            });
+        }
+    } catch(e) {}
+
     // === 2. openat hook (many apps use openat instead of open) ===
     try {
         var openatPtr = Module.findExportByName("libc.so", "openat");
