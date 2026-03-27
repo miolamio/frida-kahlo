@@ -553,6 +553,15 @@ def report(
     replay_files = generate_replay(replay_dir, traffic, vault, netmodel, package)
     console.print(f" [green]{len(replay_files)} files[/green]")
 
+    # Postman collection
+    console.print("  postman_collection.json...", end="")
+    from kahlo.report.postman import generate_postman_collection
+    postman = generate_postman_collection(traffic, vault, package)
+    postman_path = os.path.join(output_dir, "postman_collection.json")
+    with open(postman_path, "w", encoding="utf-8") as f:
+        json.dump(postman, f, indent=2, ensure_ascii=False)
+    console.print(f" [green]{os.path.getsize(postman_path):,} bytes[/green]")
+
     # Print summary
     console.print(f"\n[green]Reports saved to: {output_dir}[/green]")
     console.print()
@@ -902,6 +911,166 @@ def static_cmd(
     summary.add_row("Obfuscation level", obf.level)
 
     console.print(summary)
+
+
+@app.command(name="aggregate")
+def aggregate_cmd(
+    sessions: list[str] = typer.Argument(help="Paths to session JSON files (at least 2)"),
+    output_dir: str = typer.Option(None, "--output", "-o", help="Output directory"),
+):
+    """Aggregate multiple sessions into a unified API map."""
+    import json
+    import os
+
+    from kahlo.analyze.aggregate import (
+        SessionAggregator,
+        generate_aggregated_api_spec,
+        generate_aggregated_markdown,
+    )
+
+    if len(sessions) < 2:
+        console.print("[red]At least 2 session files required[/red]")
+        raise typer.Exit(1)
+
+    for path in sessions:
+        if not os.path.exists(path):
+            console.print(f"[red]File not found: {path}[/red]")
+            raise typer.Exit(1)
+
+    console.print(f"Aggregating [cyan]{len(sessions)}[/cyan] sessions...")
+
+    aggregator = SessionAggregator()
+    report = aggregator.aggregate(sessions)
+
+    # Determine output dir
+    if not output_dir:
+        output_dir = os.path.join(os.path.dirname(sessions[0]) or ".", "aggregated_report")
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Determine package name from first session
+    package = report.sessions[0].package if report.sessions else "app"
+
+    # Generate markdown
+    md_content = generate_aggregated_markdown(report)
+    md_path = os.path.join(output_dir, "aggregated_report.md")
+    with open(md_path, "w", encoding="utf-8") as f:
+        f.write(md_content)
+
+    # Generate API spec
+    spec_content = generate_aggregated_api_spec(report, package)
+    spec_path = os.path.join(output_dir, "aggregated_api_spec.json")
+    with open(spec_path, "w", encoding="utf-8") as f:
+        f.write(spec_content)
+
+    console.print(f"\n[green]Aggregated report saved to: {output_dir}[/green]")
+    console.print(f"  Sessions: {len(report.sessions)}")
+    console.print(f"  Endpoints: {len(report.all_endpoints)}")
+    console.print(f"  Servers: {len(report.all_servers)}")
+    console.print(f"  Secrets: {len(report.all_secrets)}")
+    console.print(f"  SDKs: {len(report.all_sdks)}")
+
+
+@app.command(name="diff")
+def diff_cmd(
+    old_session: str = typer.Argument(help="Path to old session JSON"),
+    new_session: str = typer.Argument(help="Path to new session JSON"),
+    output: str = typer.Option(None, "--output", "-o", help="Output file path"),
+):
+    """Compare two sessions to find changes."""
+    import os
+
+    from kahlo.analyze.diff import SessionDiffer, generate_diff_markdown
+
+    for path in (old_session, new_session):
+        if not os.path.exists(path):
+            console.print(f"[red]File not found: {path}[/red]")
+            raise typer.Exit(1)
+
+    console.print(f"Comparing sessions...")
+    console.print(f"  Old: [cyan]{old_session}[/cyan]")
+    console.print(f"  New: [cyan]{new_session}[/cyan]")
+
+    differ = SessionDiffer()
+    diff = differ.diff(old_session, new_session)
+
+    md_content = generate_diff_markdown(diff)
+
+    if output:
+        with open(output, "w", encoding="utf-8") as f:
+            f.write(md_content)
+        console.print(f"\n[green]Diff report saved to: {output}[/green]")
+    else:
+        # Print to console
+        console.print()
+        console.print(md_content)
+
+    # Summary
+    total_changes = (
+        len(diff.new_endpoints)
+        + len(diff.removed_endpoints)
+        + len(diff.changed_endpoints)
+        + len(diff.new_secrets)
+        + len(diff.removed_secrets)
+        + len(diff.new_sdks)
+        + len(diff.removed_sdks)
+    )
+    if total_changes == 0:
+        console.print("\n[green]Sessions are identical[/green]")
+    else:
+        console.print(f"\n[yellow]{total_changes} change(s) detected[/yellow]")
+        if diff.new_endpoints:
+            console.print(f"  + {len(diff.new_endpoints)} new endpoints")
+        if diff.removed_endpoints:
+            console.print(f"  - {len(diff.removed_endpoints)} removed endpoints")
+        if diff.changed_endpoints:
+            console.print(f"  ~ {len(diff.changed_endpoints)} changed endpoints")
+
+
+@app.command(name="export-postman")
+def export_postman_cmd(
+    session_path: str = typer.Argument(help="Path to session JSON file"),
+    output: str = typer.Option(None, "--output", "-o", help="Output file path"),
+):
+    """Export Postman Collection v2.1 from a session."""
+    import json
+    import os
+
+    from kahlo.analyze.traffic import analyze_traffic
+    from kahlo.analyze.vault import analyze_vault
+    from kahlo.report.postman import generate_postman_collection
+
+    if not os.path.exists(session_path):
+        console.print(f"[red]Session file not found: {session_path}[/red]")
+        raise typer.Exit(1)
+
+    console.print(f"Loading session: [cyan]{session_path}[/cyan]")
+    with open(session_path, "r", encoding="utf-8") as f:
+        session = json.load(f)
+
+    events = session.get("events", [])
+    package = session.get("package", "unknown")
+
+    traffic = analyze_traffic(events, package)
+    vault = analyze_vault(events, package)
+
+    collection = generate_postman_collection(traffic, vault, package)
+
+    if not output:
+        output = os.path.join(
+            os.path.dirname(session_path) or ".",
+            "postman_collection.json"
+        )
+
+    with open(output, "w", encoding="utf-8") as f:
+        json.dump(collection, f, indent=2, ensure_ascii=False)
+
+    item_count = sum(
+        len(item.get("item", [item])) if "item" in item else 1
+        for item in collection.get("item", [])
+    )
+    console.print(f"\n[green]Postman collection saved: {output}[/green]")
+    console.print(f"  Endpoints: {item_count}")
+    console.print(f"  Servers: {len(collection.get('variable', []))}")
 
 
 if __name__ == "__main__":
