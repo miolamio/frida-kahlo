@@ -22,10 +22,12 @@ class TestDiscovery:
         assert len(devices) > 0, "No devices connected"
         adb = ADB(serial=devices[0].serial)
         fs = FridaServer(adb)
-        if not fs.is_running():
-            fs.start()
-            _time.sleep(1)
         stealth = StealthManager(adb, fs)
+        # Always restart stealth to ensure clean port forwarding
+        stealth.stop()
+        _time.sleep(1)
+        stealth.start()
+        _time.sleep(2)
         eng = FridaEngine(stealth)
         yield eng
         eng.cleanup()
