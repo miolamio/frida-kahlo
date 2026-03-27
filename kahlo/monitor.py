@@ -43,13 +43,15 @@ def format_event(event: dict[str, Any]) -> str:
         url = _truncate(data.get("url", "?"), 80)
         ctype = data.get("content_type", "")
         extra = f" [{ctype}]" if ctype else ""
-        return f"\u2192 {method} {url}{extra}"
+        auth_tag = " [AUTH]" if data.get("auth_flow") else ""
+        return f"\u2192 {method} {url}{extra}{auth_tag}"
 
     if etype == "http_response":
         status = data.get("status", "?")
         url = _truncate(data.get("url", "?"), 70)
         elapsed = data.get("elapsed_ms", "?")
-        return f"\u2190 {status} {url} ({elapsed}ms)"
+        auth_tag = " [AUTH]" if data.get("auth_flow") else ""
+        return f"\u2190 {status} {url} ({elapsed}ms){auth_tag}"
 
     if etype == "tcp_connect":
         host = data.get("host", data.get("ip", "?"))
@@ -111,6 +113,26 @@ def format_event(event: dict[str, Any]) -> str:
     if etype == "keystore_enum":
         count = data.get("count", len(data.get("aliases", [])))
         return f"\u26bf keystore enum ({count} aliases)"
+
+    if etype == "encrypted_pref_read":
+        key = data.get("key", "?")
+        value = _truncate(str(data.get("value", "")), 50)
+        return f"\u26bf DECRYPTED {key} = {value}"
+
+    if etype == "encrypted_pref_write":
+        key = data.get("key", "?")
+        value = _truncate(str(data.get("value", "")), 50)
+        return f"\u270e ENCRYPTED_WRITE {key} = {value}"
+
+    if etype == "encrypted_pref_dump":
+        count = data.get("count", "?")
+        return f"\u26bf encrypted pref dump ({count} entries)"
+
+    if etype == "tink_decrypt":
+        algo = data.get("algorithm", "?")
+        length = data.get("plaintext_length", "?")
+        preview = _truncate(data.get("plaintext_preview", ""), 40)
+        return f"\u26bf Tink {algo} decrypt ({length} bytes) {preview}"
 
     if etype == "initial_dump":
         files = data.get("files") or data.get("prefs") or []

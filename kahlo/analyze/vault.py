@@ -50,6 +50,14 @@ class KeystoreEntry(BaseModel):
     keyset_hex: str = ""
 
 
+class DecryptedPrefEntry(BaseModel):
+    """A decrypted value from EncryptedSharedPreferences or Tink."""
+    key: str
+    value: str | None = None
+    value_type: str = ""
+    source: str = ""
+
+
 class VaultReport(BaseModel):
     """Complete vault analysis from a session."""
     prefs_files: list[PrefsFile] = Field(default_factory=list)
@@ -57,6 +65,8 @@ class VaultReport(BaseModel):
     secrets: list[SecretInfo] = Field(default_factory=list)
     file_writes: list[FileWriteInfo] = Field(default_factory=list)
     keystore_entries: list[KeystoreEntry] = Field(default_factory=list)
+    decrypted_prefs: list[DecryptedPrefEntry] = Field(default_factory=list)
+    tink_decrypts: int = 0
     total_pref_reads: int = 0
     total_pref_writes: int = 0
 
@@ -221,6 +231,11 @@ def analyze_vault(events: list[dict[str, Any]], package: str | None = None) -> V
     # Track keystore entries
     keystore_entries: list[KeystoreEntry] = []
 
+    # Track decrypted prefs from EncryptedSharedPreferences / Tink hooks
+    decrypted_prefs: list[DecryptedPrefEntry] = []
+    decrypted_keys_seen: set[str] = set()  # dedup by key
+    tink_decrypts = 0
+
     total_reads = 0
     total_writes = 0
 
@@ -318,6 +333,79 @@ def analyze_vault(events: list[dict[str, Any]], package: str | None = None) -> V
                 ts=ts,
             ))
 
+        elif etype == "encrypted_pref_read":
+            key = data.get("key", "")
+            value = data.get("value")
+            value_type = data.get("value_type", "")
+            source = data.get("source", "EncryptedSharedPreferences")
+
+            if key and key not in decrypted_keys_seen:
+                decrypted_keys_seen.add(key)
+                decrypted_prefs.append(DecryptedPrefEntry(
+                    key=key,
+                    value=str(value) if value is not None else None,
+                    value_type=value_type,
+                    source=source,
+                ))
+
+            # Also try to classify as a secret
+            if value is not None and not _is_encrypted_key(key):
+                secret = _classify_secret(key, value, f"encrypted_prefs:{source}")
+                if secret:
+                    secret.sensitivity = "high"  # Encrypted prefs are always high sensitivity
+                    dedup_key = f"{secret.name}|{secret.value}"
+                    if dedup_key not in secrets_map:
+                        secrets_map[dedup_key] = secret
+
+        elif etype == "encrypted_pref_write":
+            key = data.get("key", "")
+            value = data.get("value")
+            value_type = data.get("value_type", "")
+            source = data.get("source", "EncryptedSharedPreferences")
+            total_writes += 1
+
+            if key and key not in decrypted_keys_seen:
+                decrypted_keys_seen.add(key)
+                decrypted_prefs.append(DecryptedPrefEntry(
+                    key=key,
+                    value=str(value) if value is not None else None,
+                    value_type=value_type,
+                    source=f"{source}:write",
+                ))
+
+            # Also try to classify as a secret
+            if value is not None and not _is_encrypted_key(key):
+                secret = _classify_secret(key, value, f"encrypted_prefs:{source}")
+                if secret:
+                    secret.sensitivity = "high"
+                    dedup_key = f"{secret.name}|{secret.value}"
+                    if dedup_key not in secrets_map:
+                        secrets_map[dedup_key] = secret
+
+        elif etype == "encrypted_pref_dump":
+            entries = data.get("entries", {})
+            source = data.get("source", "EncryptedSharedPreferences")
+            for k, v in entries.items():
+                if k and k not in decrypted_keys_seen:
+                    decrypted_keys_seen.add(k)
+                    decrypted_prefs.append(DecryptedPrefEntry(
+                        key=k,
+                        value=str(v) if v is not None else None,
+                        value_type="string",
+                        source=source,
+                    ))
+
+                if v is not None and not _is_encrypted_key(k):
+                    secret = _classify_secret(k, v, f"encrypted_prefs:{source}")
+                    if secret:
+                        secret.sensitivity = "high"
+                        dedup_key = f"{secret.name}|{secret.value}"
+                        if dedup_key not in secrets_map:
+                            secrets_map[dedup_key] = secret
+
+        elif etype == "tink_decrypt":
+            tink_decrypts += 1
+
         elif etype in ("sqlite_write", "sqlite_query"):
             db_path = data.get("db", "")
             table = data.get("table", "")
@@ -413,6 +501,8 @@ def analyze_vault(events: list[dict[str, Any]], package: str | None = None) -> V
         secrets=sorted(secrets_map.values(), key=lambda s: ({"high": 0, "medium": 1, "low": 2}.get(s.sensitivity, 3), s.name)),
         file_writes=file_writes,
         keystore_entries=keystore_entries,
+        decrypted_prefs=decrypted_prefs,
+        tink_decrypts=tink_decrypts,
         total_pref_reads=total_reads,
         total_pref_writes=total_writes,
     )

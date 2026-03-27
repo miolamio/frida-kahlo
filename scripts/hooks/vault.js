@@ -276,6 +276,347 @@
         });
     } catch(e) {}
 
+    // === EncryptedSharedPreferences hooks (AndroidX Security / Tink) ===
+    // Intercepts AFTER decryption — returns cleartext keys and values
+    try {
+        Java.perform(function() {
+            // Hook EncryptedSharedPreferences — all get* methods return decrypted values
+            safeHook("androidx.security.crypto.EncryptedSharedPreferences", function(cls) {
+                // getString — most common, used for tokens, user data
+                try {
+                    cls.getString.overload('java.lang.String', 'java.lang.String').implementation = function(key, defValue) {
+                        var result = this.getString(key, defValue);
+                        try {
+                            sendEvent("vault", "encrypted_pref_read", {
+                                key: key,
+                                value: result !== null ? truncValue(result.toString()) : null,
+                                default_value: defValue !== null ? defValue.toString() : null,
+                                value_type: "string",
+                                source: "EncryptedSharedPreferences"
+                            });
+                        } catch(e) {}
+                        return result;
+                    };
+                } catch(e) {}
+
+                // getInt
+                try {
+                    cls.getInt.overload('java.lang.String', 'int').implementation = function(key, defValue) {
+                        var result = this.getInt(key, defValue);
+                        try {
+                            sendEvent("vault", "encrypted_pref_read", {
+                                key: key,
+                                value: result,
+                                default_value: defValue,
+                                value_type: "int",
+                                source: "EncryptedSharedPreferences"
+                            });
+                        } catch(e) {}
+                        return result;
+                    };
+                } catch(e) {}
+
+                // getBoolean
+                try {
+                    cls.getBoolean.overload('java.lang.String', 'boolean').implementation = function(key, defValue) {
+                        var result = this.getBoolean(key, defValue);
+                        try {
+                            sendEvent("vault", "encrypted_pref_read", {
+                                key: key,
+                                value: result,
+                                default_value: defValue,
+                                value_type: "boolean",
+                                source: "EncryptedSharedPreferences"
+                            });
+                        } catch(e) {}
+                        return result;
+                    };
+                } catch(e) {}
+
+                // getLong
+                try {
+                    cls.getLong.overload('java.lang.String', 'long').implementation = function(key, defValue) {
+                        var result = this.getLong(key, defValue);
+                        try {
+                            sendEvent("vault", "encrypted_pref_read", {
+                                key: key,
+                                value: result,
+                                default_value: defValue,
+                                value_type: "long",
+                                source: "EncryptedSharedPreferences"
+                            });
+                        } catch(e) {}
+                        return result;
+                    };
+                } catch(e) {}
+
+                // getFloat
+                try {
+                    cls.getFloat.overload('java.lang.String', 'float').implementation = function(key, defValue) {
+                        var result = this.getFloat(key, defValue);
+                        try {
+                            sendEvent("vault", "encrypted_pref_read", {
+                                key: key,
+                                value: result,
+                                default_value: defValue,
+                                value_type: "float",
+                                source: "EncryptedSharedPreferences"
+                            });
+                        } catch(e) {}
+                        return result;
+                    };
+                } catch(e) {}
+
+                // getStringSet
+                try {
+                    cls.getStringSet.overload('java.lang.String', 'java.util.Set').implementation = function(key, defValues) {
+                        var result = this.getStringSet(key, defValues);
+                        try {
+                            var resultStr = null;
+                            if (result !== null) {
+                                var arr = [];
+                                var iter = result.iterator();
+                                while (iter.hasNext()) {
+                                    arr.push(iter.next().toString());
+                                }
+                                resultStr = JSON.stringify(arr);
+                            }
+                            sendEvent("vault", "encrypted_pref_read", {
+                                key: key,
+                                value: resultStr,
+                                value_type: "string_set",
+                                source: "EncryptedSharedPreferences"
+                            });
+                        } catch(e) {}
+                        return result;
+                    };
+                } catch(e) {}
+
+                // getAll — returns all decrypted key-value pairs
+                try {
+                    cls.getAll.implementation = function() {
+                        var result = this.getAll();
+                        try {
+                            if (result !== null) {
+                                var map = {};
+                                var keys = result.keySet().iterator();
+                                var count = 0;
+                                while (keys.hasNext() && count < 100) {
+                                    var k = keys.next().toString();
+                                    var v = result.get(k);
+                                    map[k] = v !== null ? truncValue(v.toString()) : null;
+                                    count++;
+                                }
+                                sendEvent("vault", "encrypted_pref_dump", {
+                                    entries: map,
+                                    count: count,
+                                    source: "EncryptedSharedPreferences"
+                                });
+                            }
+                        } catch(e) {}
+                        return result;
+                    };
+                } catch(e) {}
+
+                sendEvent("vault", "hook_status", {status: "encrypted_prefs_hooked", source: "EncryptedSharedPreferences"});
+            });
+
+            // Hook EncryptedSharedPreferences.Editor — write operations (pre-encryption)
+            safeHook("androidx.security.crypto.EncryptedSharedPreferences$Editor", function(cls) {
+                try {
+                    cls.putString.overload('java.lang.String', 'java.lang.String').implementation = function(key, value) {
+                        sendEvent("vault", "encrypted_pref_write", {
+                            key: key,
+                            value: truncValue(value),
+                            value_type: "string",
+                            source: "EncryptedSharedPreferences"
+                        });
+                        return this.putString(key, value);
+                    };
+                } catch(e) {}
+
+                try {
+                    cls.putInt.overload('java.lang.String', 'int').implementation = function(key, value) {
+                        sendEvent("vault", "encrypted_pref_write", {
+                            key: key,
+                            value: value,
+                            value_type: "int",
+                            source: "EncryptedSharedPreferences"
+                        });
+                        return this.putInt(key, value);
+                    };
+                } catch(e) {}
+
+                try {
+                    cls.putBoolean.overload('java.lang.String', 'boolean').implementation = function(key, value) {
+                        sendEvent("vault", "encrypted_pref_write", {
+                            key: key,
+                            value: value,
+                            value_type: "boolean",
+                            source: "EncryptedSharedPreferences"
+                        });
+                        return this.putBoolean(key, value);
+                    };
+                } catch(e) {}
+
+                try {
+                    cls.putLong.overload('java.lang.String', 'long').implementation = function(key, value) {
+                        sendEvent("vault", "encrypted_pref_write", {
+                            key: key,
+                            value: value,
+                            value_type: "long",
+                            source: "EncryptedSharedPreferences"
+                        });
+                        return this.putLong(key, value);
+                    };
+                } catch(e) {}
+
+                try {
+                    cls.putFloat.overload('java.lang.String', 'float').implementation = function(key, value) {
+                        sendEvent("vault", "encrypted_pref_write", {
+                            key: key,
+                            value: value,
+                            value_type: "float",
+                            source: "EncryptedSharedPreferences"
+                        });
+                        return this.putFloat(key, value);
+                    };
+                } catch(e) {}
+            });
+        });
+    } catch(e) {}
+
+    // === Tink primitives — for apps using Tink directly (not via EncryptedSharedPreferences) ===
+    try {
+        Java.perform(function() {
+            // Hook Aead.decrypt() — captures plaintext after AEAD decryption
+            safeHook("com.google.crypto.tink.Aead", function(iface) {
+                // Aead is an interface — enumerate implementations at runtime
+                try {
+                    Java.choose("com.google.crypto.tink.aead.AesGcmJce", {
+                        onMatch: function(instance) {
+                            // Found an AesGcmJce instance
+                        },
+                        onComplete: function() {}
+                    });
+                } catch(e) {}
+            });
+
+            // Hook AesGcmJce.decrypt (common Tink AEAD implementation)
+            safeHook("com.google.crypto.tink.aead.AesGcmJce", function(cls) {
+                try {
+                    cls.decrypt.overload('[B', '[B').implementation = function(ciphertext, associatedData) {
+                        var result = this.decrypt(ciphertext, associatedData);
+                        try {
+                            var plaintext = "";
+                            if (result !== null) {
+                                var len = result.length;
+                                for (var i = 0; i < Math.min(len, 2048); i++) {
+                                    var b = result[i] & 0xFF;
+                                    plaintext += (b >= 32 && b <= 126) ? String.fromCharCode(b) : ".";
+                                }
+                            }
+                            sendEvent("vault", "tink_decrypt", {
+                                algorithm: "AesGcm",
+                                plaintext_preview: plaintext,
+                                plaintext_length: result ? result.length : 0,
+                                associated_data_length: associatedData ? associatedData.length : 0,
+                                source: "AesGcmJce"
+                            });
+                        } catch(e) {}
+                        return result;
+                    };
+                } catch(e) {}
+            });
+
+            // Hook AesGcmHkdfStreamingKeyManager (Tink streaming AEAD)
+            safeHook("com.google.crypto.tink.subtle.AesGcmHkdfStreaming", function(cls) {
+                // Not all apps use this, but it handles large encrypted files
+            });
+
+            // Hook DeterministicAead.decryptDeterministically — used for key encryption in EncryptedSharedPreferences
+            safeHook("com.google.crypto.tink.daead.AesSivKeyManager$AesSiv", function(cls) {
+                try {
+                    cls.decryptDeterministically.overload('[B', '[B').implementation = function(ciphertext, associatedData) {
+                        var result = this.decryptDeterministically(ciphertext, associatedData);
+                        try {
+                            var plaintext = "";
+                            if (result !== null) {
+                                var len = result.length;
+                                for (var i = 0; i < Math.min(len, 2048); i++) {
+                                    var b = result[i] & 0xFF;
+                                    plaintext += (b >= 32 && b <= 126) ? String.fromCharCode(b) : ".";
+                                }
+                            }
+                            sendEvent("vault", "tink_decrypt", {
+                                algorithm: "AesSiv",
+                                plaintext_preview: plaintext,
+                                plaintext_length: result ? result.length : 0,
+                                associated_data_length: associatedData ? associatedData.length : 0,
+                                source: "AesSiv"
+                            });
+                        } catch(e) {}
+                        return result;
+                    };
+                } catch(e) {}
+            });
+
+            // Alternative Tink class names (varies by Tink version)
+            safeHook("com.google.crypto.tink.subtle.AesSiv", function(cls) {
+                try {
+                    cls.decryptDeterministically.overload('[B', '[B').implementation = function(ciphertext, associatedData) {
+                        var result = this.decryptDeterministically(ciphertext, associatedData);
+                        try {
+                            var plaintext = "";
+                            if (result !== null) {
+                                var len = result.length;
+                                for (var i = 0; i < Math.min(len, 2048); i++) {
+                                    var b = result[i] & 0xFF;
+                                    plaintext += (b >= 32 && b <= 126) ? String.fromCharCode(b) : ".";
+                                }
+                            }
+                            sendEvent("vault", "tink_decrypt", {
+                                algorithm: "AesSiv",
+                                plaintext_preview: plaintext,
+                                plaintext_length: result ? result.length : 0,
+                                associated_data_length: associatedData ? associatedData.length : 0,
+                                source: "AesSiv_subtle"
+                            });
+                        } catch(e) {}
+                        return result;
+                    };
+                } catch(e) {}
+            });
+
+            // Hook AesGcm (newer Tink versions use this path)
+            safeHook("com.google.crypto.tink.subtle.AesGcmJce", function(cls) {
+                try {
+                    cls.decrypt.overload('[B', '[B').implementation = function(ciphertext, associatedData) {
+                        var result = this.decrypt(ciphertext, associatedData);
+                        try {
+                            var plaintext = "";
+                            if (result !== null) {
+                                var len = result.length;
+                                for (var i = 0; i < Math.min(len, 2048); i++) {
+                                    var b = result[i] & 0xFF;
+                                    plaintext += (b >= 32 && b <= 126) ? String.fromCharCode(b) : ".";
+                                }
+                            }
+                            sendEvent("vault", "tink_decrypt", {
+                                algorithm: "AesGcm",
+                                plaintext_preview: plaintext,
+                                plaintext_length: result ? result.length : 0,
+                                associated_data_length: associatedData ? associatedData.length : 0,
+                                source: "AesGcmJce_subtle"
+                            });
+                        } catch(e) {}
+                        return result;
+                    };
+                } catch(e) {}
+            });
+        });
+    } catch(e) {}
+
     // === KeyStore hooks ===
     try {
         Java.perform(function() {

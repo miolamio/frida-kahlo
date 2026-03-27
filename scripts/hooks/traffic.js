@@ -15,6 +15,89 @@
     var _activeLevel = "none"; // "okhttp3", "system_okhttp", "httpurlconnection", "ssl_parsed"
     var _conscryptHooked = false; // Set to true when Conscrypt SSL hooks are active
 
+    // --- Auth flow detection ---
+    var _AUTH_URL_PATTERNS = [
+        /\/(login|signin|sign_in|sign-in)\b/i,
+        /\/(auth|authenticate|authorization)\b/i,
+        /\/(token|oauth|oauth2|oidc)\b/i,
+        /\/(register|signup|sign_up|sign-up)\b/i,
+        /\/(verify|verification|confirm)\b/i,
+        /\/(otp|sms|code|pin)\b/i,
+        /\/(refresh|renew)\b/i,
+        /\/(password|reset|recover)\b/i,
+        /\/(session|sessions)\b/i,
+        /\/(user\/me|profile|account)\b/i
+    ];
+
+    var _AUTH_HEADER_NAMES = [
+        "authorization", "x-auth-token", "x-access-token",
+        "x-api-key", "x-session-token", "cookie",
+        "set-cookie", "x-csrf-token", "x-xsrf-token"
+    ];
+
+    var _AUTH_BODY_PATTERNS = [
+        /["\']?access_token["\']?\s*[:=]/i,
+        /["\']?refresh_token["\']?\s*[:=]/i,
+        /["\']?id_token["\']?\s*[:=]/i,
+        /["\']?token["\']?\s*[:=]\s*["\']?eyJ/i,
+        /["\']?password["\']?\s*[:=]/i,
+        /["\']?grant_type["\']?\s*[:=]/i,
+        /bearer\s+eyJ/i
+    ];
+
+    function detectAuthFlow(url, headers, body, direction) {
+        // Check URL patterns
+        if (url) {
+            for (var i = 0; i < _AUTH_URL_PATTERNS.length; i++) {
+                if (_AUTH_URL_PATTERNS[i].test(url)) {
+                    return {auth_flow: true, auth_signal: "url_pattern", auth_pattern: _AUTH_URL_PATTERNS[i].source};
+                }
+            }
+        }
+
+        // Check headers
+        if (headers) {
+            var headerKeys = Object.keys(headers);
+            for (var j = 0; j < headerKeys.length; j++) {
+                var hk = headerKeys[j].toLowerCase();
+                for (var k = 0; k < _AUTH_HEADER_NAMES.length; k++) {
+                    if (hk === _AUTH_HEADER_NAMES[k]) {
+                        var hv = headers[headerKeys[j]];
+                        // Skip "Token null" and empty values
+                        if (hv && hv !== "null" && hv !== "Token null") {
+                            var result = {auth_flow: true, auth_signal: "header", auth_header: headerKeys[j]};
+                            // Check for JWT in header
+                            if (typeof hv === "string" && hv.indexOf("eyJ") !== -1) {
+                                result.auth_has_jwt = true;
+                            }
+                            // Check for set-cookie (response auth)
+                            if (hk === "set-cookie" && direction === "response") {
+                                result.auth_signal = "set_cookie";
+                            }
+                            return result;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Check body patterns
+        if (body && typeof body === "string" && body.length > 0) {
+            for (var m = 0; m < _AUTH_BODY_PATTERNS.length; m++) {
+                if (_AUTH_BODY_PATTERNS[m].test(body)) {
+                    var bodyResult = {auth_flow: true, auth_signal: "body_pattern", auth_pattern: _AUTH_BODY_PATTERNS[m].source};
+                    // Check for JWT in body
+                    if (body.indexOf("eyJ") !== -1) {
+                        bodyResult.auth_has_jwt = true;
+                    }
+                    return bodyResult;
+                }
+            }
+        }
+
+        return null;
+    }
+
     function truncBody(s) {
         if (!s) return "";
         if (s.length <= MAX_BODY) return s;
@@ -72,7 +155,7 @@
                                     }
                                 } catch (e) {}
 
-                                sendEvent("traffic", "http_request", {
+                                var reqEvent = {
                                     index: idx,
                                     method: method,
                                     url: url,
@@ -81,7 +164,19 @@
                                     body_length: reqBodyLen,
                                     body_format: reqFormat,
                                     source: "okhttp3"
-                                });
+                                };
+
+                                // Auth flow detection on request
+                                var reqAuth = detectAuthFlow(url, reqHeaders, reqBody, "request");
+                                if (reqAuth) {
+                                    reqEvent.auth_flow = reqAuth.auth_flow;
+                                    reqEvent.auth_signal = reqAuth.auth_signal;
+                                    if (reqAuth.auth_pattern) reqEvent.auth_pattern = reqAuth.auth_pattern;
+                                    if (reqAuth.auth_header) reqEvent.auth_header = reqAuth.auth_header;
+                                    if (reqAuth.auth_has_jwt) reqEvent.auth_has_jwt = true;
+                                }
+
+                                sendEvent("traffic", "http_request", reqEvent);
 
                                 var t0 = Date.now();
                                 var response = chain.proceed(request);
@@ -106,7 +201,7 @@
                                     }
                                 } catch (e) {}
 
-                                sendEvent("traffic", "http_response", {
+                                var resEvent = {
                                     index: idx,
                                     url: url,
                                     status: status,
@@ -116,7 +211,26 @@
                                     body_format: resFormat,
                                     elapsed_ms: elapsed,
                                     source: "okhttp3"
-                                });
+                                };
+
+                                // Auth flow detection on response
+                                var resAuth = detectAuthFlow(url, resHeaders, resBody, "response");
+                                if (resAuth) {
+                                    resEvent.auth_flow = resAuth.auth_flow;
+                                    resEvent.auth_signal = resAuth.auth_signal;
+                                    if (resAuth.auth_pattern) resEvent.auth_pattern = resAuth.auth_pattern;
+                                    if (resAuth.auth_header) resEvent.auth_header = resAuth.auth_header;
+                                    if (resAuth.auth_has_jwt) resEvent.auth_has_jwt = true;
+                                    if (resAuth.auth_signal === "set_cookie") resEvent.auth_set_cookie = true;
+                                }
+
+                                // If request was auth, tag response too
+                                if (reqAuth && reqAuth.auth_flow) {
+                                    resEvent.auth_flow = true;
+                                    if (!resEvent.auth_signal) resEvent.auth_signal = "response_to_auth_request";
+                                }
+
+                                sendEvent("traffic", "http_response", resEvent);
 
                                 return response;
                             } catch(e) {
@@ -237,7 +351,7 @@
                                 }
                             } catch(e) {}
 
-                            sendEvent("traffic", "http_request", {
+                            var sysReqEvent = {
                                 index: idx,
                                 method: method,
                                 url: url,
@@ -246,7 +360,19 @@
                                 body_length: reqBodyLen,
                                 body_format: reqFormat,
                                 source: "system_okhttp"
-                            });
+                            };
+
+                            // Auth flow detection on system_okhttp request
+                            var sysReqAuth = detectAuthFlow(url, reqHeaders, reqBody, "request");
+                            if (sysReqAuth) {
+                                sysReqEvent.auth_flow = sysReqAuth.auth_flow;
+                                sysReqEvent.auth_signal = sysReqAuth.auth_signal;
+                                if (sysReqAuth.auth_pattern) sysReqEvent.auth_pattern = sysReqAuth.auth_pattern;
+                                if (sysReqAuth.auth_header) sysReqEvent.auth_header = sysReqAuth.auth_header;
+                                if (sysReqAuth.auth_has_jwt) sysReqEvent.auth_has_jwt = true;
+                            }
+
+                            sendEvent("traffic", "http_request", sysReqEvent);
                         }
 
                         if (response) {
@@ -278,7 +404,7 @@
                                 }
                             } catch(e) {}
 
-                            sendEvent("traffic", "http_response", {
+                            var sysResEvent = {
                                 index: idx,
                                 url: resUrl,
                                 status: status,
@@ -287,7 +413,25 @@
                                 body_length: resBodyLen,
                                 body_format: resFormat,
                                 source: "system_okhttp"
-                            });
+                            };
+
+                            // Auth flow detection on system_okhttp response
+                            var sysResAuth = detectAuthFlow(resUrl, resHeaders, resBody, "response");
+                            if (sysResAuth) {
+                                sysResEvent.auth_flow = sysResAuth.auth_flow;
+                                sysResEvent.auth_signal = sysResAuth.auth_signal;
+                                if (sysResAuth.auth_pattern) sysResEvent.auth_pattern = sysResAuth.auth_pattern;
+                                if (sysResAuth.auth_has_jwt) sysResEvent.auth_has_jwt = true;
+                                if (sysResAuth.auth_signal === "set_cookie") sysResEvent.auth_set_cookie = true;
+                            }
+
+                            // If request was auth, tag response too
+                            if (sysReqAuth && sysReqAuth.auth_flow) {
+                                sysResEvent.auth_flow = true;
+                                if (!sysResEvent.auth_signal) sysResEvent.auth_signal = "response_to_auth_request";
+                            }
+
+                            sendEvent("traffic", "http_response", sysResEvent);
                         }
                     } catch(e) {
                         // Non-fatal: some calls may not have request/response yet

@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
+from kahlo.analyze.auth import AuthFlowReport
 from kahlo.analyze.netmodel import NetmodelReport
 from kahlo.analyze.patterns import PatternsReport
 from kahlo.analyze.recon import ReconReport
@@ -27,6 +28,7 @@ def generate_markdown(
     recon: ReconReport,
     netmodel: NetmodelReport,
     patterns: PatternsReport,
+    auth: AuthFlowReport | None = None,
 ) -> str:
     """Generate a comprehensive Markdown analysis report.
 
@@ -216,11 +218,31 @@ def generate_markdown(
             lines.append(f"- **{entry.store}**: {entry.key_type} ({entry.role})")
         lines.append("")
 
+    if vault.decrypted_prefs:
+        lines.append("### 4.5 Decrypted Preferences (Tink/EncryptedSharedPreferences)")
+        lines.append("")
+        lines.append(f"**{len(vault.decrypted_prefs)} entries** decrypted from EncryptedSharedPreferences:")
+        lines.append("")
+        lines.append("| Key | Value | Type |")
+        lines.append("|-----|-------|------|")
+        for dp in vault.decrypted_prefs:
+            val = _mask_secret(dp.value, 30) if dp.value else "null"
+            lines.append(f"| `{dp.key}` | `{val}` | {dp.value_type} |")
+        lines.append("")
+        if vault.tink_decrypts > 0:
+            lines.append(f"*Tink decrypt operations observed: {vault.tink_decrypts}*")
+            lines.append("")
+
     if vault.file_writes:
-        lines.append("### 4.5 File System Writes")
+        lines.append("### 4.6 File System Writes")
         lines.append("")
         for fw in vault.file_writes[:20]:
-            short_path = fw.path.split("/com.voltmobi.yakitoriya/")[-1] if "/com.voltmobi.yakitoriya/" in fw.path else fw.path
+            # Use package name for path shortening
+            short_path = fw.path
+            if package and f"/{package}/" in fw.path:
+                short_path = fw.path.split(f"/{package}/")[-1]
+            elif "/com.voltmobi.yakitoriya/" in fw.path:
+                short_path = fw.path.split("/com.voltmobi.yakitoriya/")[-1]
             lines.append(f"- `{short_path}` ({fw.size} bytes)")
         if len(vault.file_writes) > 20:
             lines.append(f"- ... and {len(vault.file_writes) - 20} more")
@@ -228,6 +250,106 @@ def generate_markdown(
 
     lines.append("---")
     lines.append("")
+
+    # --- 4b. Auth Flow (if present) ---
+    if auth and auth.has_auth_flow:
+        lines.append("## 4b. Auth Flow Analysis")
+        lines.append("")
+
+        if auth.auth_url:
+            lines.append(f"**Auth endpoint:** `{auth.auth_method} {auth.auth_url}`")
+            lines.append("")
+
+        if auth.auth_steps:
+            lines.append("### Auth Sequence")
+            lines.append("")
+            lines.append("| Step | Type | Method | URL | Status |")
+            lines.append("|------|------|--------|-----|--------|")
+            for i, step in enumerate(auth.auth_steps, 1):
+                status = str(step.response.status) if step.response else "N/A"
+                url = step.request.url[:80] + "..." if len(step.request.url) > 80 else step.request.url
+                lines.append(f"| {i} | {step.step_type} | {step.request.method} | `{url}` | {status} |")
+            lines.append("")
+
+            # Detailed steps
+            for i, step in enumerate(auth.auth_steps, 1):
+                lines.append(f"**Step {i}: {step.step_type.upper()}** — `{step.request.method} {step.request.url}`")
+                lines.append("")
+                if step.request.headers:
+                    lines.append("Request headers:")
+                    lines.append("```")
+                    for hk, hv in step.request.headers.items():
+                        lines.append(f"{hk}: {hv}")
+                    lines.append("```")
+                if step.request.body_preview:
+                    lines.append(f"Request body ({step.request.body_format}):")
+                    lines.append("```")
+                    lines.append(step.request.body_preview[:500])
+                    lines.append("```")
+                if step.response:
+                    lines.append(f"Response: HTTP {step.response.status}")
+                    if step.response.body_preview:
+                        lines.append(f"Response body ({step.response.body_format}):")
+                        lines.append("```")
+                        lines.append(step.response.body_preview[:500])
+                        lines.append("```")
+                lines.append("")
+
+        if auth.required_headers:
+            lines.append("### Required Headers")
+            lines.append("")
+            lines.append("```")
+            for hk, hv in auth.required_headers.items():
+                lines.append(f"{hk}: {hv}")
+            lines.append("```")
+            lines.append("")
+
+        if auth.token_refresh:
+            lines.append("### Token Refresh Pattern")
+            lines.append("")
+            lines.append(f"- **URL:** `{auth.token_refresh.refresh_url}`")
+            lines.append(f"- **Method:** {auth.token_refresh.refresh_method}")
+            lines.append(f"- **Uses refresh_token:** {auth.token_refresh.uses_refresh_token}")
+            lines.append(f"- **Returns new token:** {auth.token_refresh.response_has_new_token}")
+            lines.append("")
+
+        lines.append("---")
+        lines.append("")
+
+    # JWT tokens section (always show if found, even without auth flow)
+    if auth and auth.jwt_tokens:
+        lines.append("## 4c. JWT Tokens")
+        lines.append("")
+        lines.append(f"**{len(auth.jwt_tokens)} JWT tokens** found in session:")
+        lines.append("")
+        for i, jwt in enumerate(auth.jwt_tokens, 1):
+            expired = " **EXPIRED**" if jwt.is_expired else ""
+            lines.append(f"### JWT #{i}{expired}")
+            lines.append("")
+            lines.append(f"**Source:** {jwt.source}")
+            lines.append("")
+            lines.append("Header:")
+            lines.append("```json")
+            import json
+            lines.append(json.dumps(jwt.header, indent=2))
+            lines.append("```")
+            lines.append("")
+            if jwt.issuer:
+                lines.append(f"- **Issuer (iss):** {jwt.issuer}")
+            if jwt.subject:
+                lines.append(f"- **Subject (sub):** {jwt.subject}")
+            if jwt.expires_at:
+                lines.append(f"- **Expires (exp):** {jwt.expires_at}")
+            if jwt.issued_at:
+                lines.append(f"- **Issued (iat):** {jwt.issued_at}")
+            if jwt.custom_claims:
+                lines.append("- **Custom claims:**")
+                for ck, cv in jwt.custom_claims.items():
+                    lines.append(f"  - `{ck}`: {str(cv)[:100]}")
+            lines.append("")
+
+        lines.append("---")
+        lines.append("")
 
     # --- 5. Privacy Profile ---
     lines.append("## 5. Privacy Profile")

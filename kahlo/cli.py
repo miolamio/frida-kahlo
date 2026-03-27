@@ -194,6 +194,7 @@ def frida_stop():
 def scan(
     package: str = typer.Argument(help="Package name to scan"),
     duration: int = typer.Option(60, "--duration", "-d", help="Scan duration in seconds"),
+    auth_capture: bool = typer.Option(False, "--auth-capture", help="Auth capture mode: clear app data, wait for login"),
 ):
     """Scan an app: spawn with stealth + hooks, collect events for N seconds."""
     import time
@@ -230,6 +231,17 @@ def scan(
     stealth = StealthManager(adb, fs)
     engine = FridaEngine(stealth)
 
+    # --- Auth capture mode: clear app data for fresh login ---
+    if auth_capture:
+        console.print(f"\n[bold yellow]AUTH CAPTURE MODE[/bold yellow]")
+        console.print(f"Очищаю данные {package}...")
+        try:
+            adb.shell(f"pm clear {package}")
+            console.print(f"  [green]Данные очищены[/green]")
+        except Exception as e:
+            console.print(f"  [yellow]Не удалось очистить: {e}[/yellow]")
+        time.sleep(1)
+
     # --- 2. Compose scripts ---
     loader = ScriptLoader()
     console.print(f"[cyan]Composing scripts for {package}...[/cyan]")
@@ -255,6 +267,8 @@ def scan(
 
     # --- 3. Create session ---
     session = Session(package=package)
+    if auth_capture:
+        session.metadata["auth_capture"] = True
 
     # --- 4. Spawn app with hooks ---
     console.print(f"[green]Spawning {package}...[/green]")
@@ -269,42 +283,85 @@ def scan(
         console.print(f"[red]Failed to spawn: {e}[/red]")
         raise typer.Exit(1)
 
-    # --- 5. Collect events with live progress ---
-    console.print(f"\n[bold]Collecting events for {duration} seconds...[/bold]")
-    console.print("[dim]Interact with the app on the device to generate traffic.[/dim]\n")
+    # --- 5. Collect events ---
+    if auth_capture:
+        # Auth capture mode: run until Ctrl+C
+        console.print(f"\n[bold yellow]Залогиньтесь в приложение. Нажмите Ctrl+C когда закончите.[/bold yellow]")
+        console.print("[dim]Auth events will be highlighted.[/dim]\n")
 
-    try:
-        start_time = time.time()
-        with Live(console=console, refresh_per_second=2) as live:
-            while time.time() - start_time < duration:
-                elapsed = int(time.time() - start_time)
-                remaining = duration - elapsed
-                n_events = len(session.events)
+        try:
+            start_time = time.time()
+            with Live(console=console, refresh_per_second=2) as live:
+                while True:
+                    elapsed = int(time.time() - start_time)
+                    n_events = len(session.events)
 
-                # Build module counts for display
-                module_counts = {}
-                for ev in session.events:
-                    mod = ev.get("module", "?")
-                    module_counts[mod] = module_counts.get(mod, 0) + 1
+                    # Count auth events specifically
+                    auth_count = sum(
+                        1 for ev in session.events
+                        if ev.get("data", {}).get("auth_flow")
+                        or ev.get("type") in ("encrypted_pref_read", "encrypted_pref_write", "encrypted_pref_dump", "tink_decrypt")
+                    )
 
-                counts_str = "  ".join(
-                    f"[cyan]{m}[/cyan]:{c}" for m, c in sorted(module_counts.items())
-                )
+                    module_counts = {}
+                    for ev in session.events:
+                        mod = ev.get("module", "?")
+                        module_counts[mod] = module_counts.get(mod, 0) + 1
 
-                progress_bar = "#" * (elapsed * 40 // max(duration, 1))
-                progress_empty = "-" * (40 - len(progress_bar))
+                    counts_str = "  ".join(
+                        f"[cyan]{m}[/cyan]:{c}" for m, c in sorted(module_counts.items())
+                    )
 
-                display = (
-                    f"[{progress_bar}{progress_empty}] {elapsed}s / {duration}s  "
-                    f"({remaining}s remaining)\n\n"
-                    f"Events: [bold green]{n_events}[/bold green]\n"
-                    f"{counts_str}"
-                )
-                live.update(Panel(display, title="Scanning", border_style="blue"))
+                    mins, secs = divmod(elapsed, 60)
 
-                time.sleep(0.5)
-    except KeyboardInterrupt:
-        console.print("\n[yellow]Scan interrupted by user[/yellow]")
+                    display = (
+                        f"[bold yellow]AUTH CAPTURE[/bold yellow]  {mins:02d}:{secs:02d}\n\n"
+                        f"Events: [bold green]{n_events}[/bold green]  "
+                        f"Auth events: [bold yellow]{auth_count}[/bold yellow]\n"
+                        f"{counts_str}"
+                    )
+                    live.update(Panel(display, title="Auth Capture", border_style="yellow"))
+
+                    time.sleep(0.5)
+        except KeyboardInterrupt:
+            console.print("\n[yellow]Auth capture stopped[/yellow]")
+    else:
+        # Standard scan mode
+        console.print(f"\n[bold]Collecting events for {duration} seconds...[/bold]")
+        console.print("[dim]Interact with the app on the device to generate traffic.[/dim]\n")
+
+        try:
+            start_time = time.time()
+            with Live(console=console, refresh_per_second=2) as live:
+                while time.time() - start_time < duration:
+                    elapsed = int(time.time() - start_time)
+                    remaining = duration - elapsed
+                    n_events = len(session.events)
+
+                    # Build module counts for display
+                    module_counts = {}
+                    for ev in session.events:
+                        mod = ev.get("module", "?")
+                        module_counts[mod] = module_counts.get(mod, 0) + 1
+
+                    counts_str = "  ".join(
+                        f"[cyan]{m}[/cyan]:{c}" for m, c in sorted(module_counts.items())
+                    )
+
+                    progress_bar = "#" * (elapsed * 40 // max(duration, 1))
+                    progress_empty = "-" * (40 - len(progress_bar))
+
+                    display = (
+                        f"[{progress_bar}{progress_empty}] {elapsed}s / {duration}s  "
+                        f"({remaining}s remaining)\n\n"
+                        f"Events: [bold green]{n_events}[/bold green]\n"
+                        f"{counts_str}"
+                    )
+                    live.update(Panel(display, title="Scanning", border_style="blue"))
+
+                    time.sleep(0.5)
+        except KeyboardInterrupt:
+            console.print("\n[yellow]Scan interrupted by user[/yellow]")
 
     # --- 6. Cleanup ---
     console.print("\nStopping...")
@@ -339,6 +396,54 @@ def scan(
         if len(stats["unique_endpoints"]) > 20:
             console.print(f"  ... and {len(stats['unique_endpoints']) - 20} more")
 
+    # --- 9. Auth capture: run auth analysis and print summary ---
+    if auth_capture:
+        _print_auth_summary(session.events, console)
+
+
+def _print_auth_summary(events: list, console_obj) -> None:
+    """Print auth flow summary after auth-capture scan."""
+    from kahlo.analyze.auth import analyze_auth
+
+    auth_report = analyze_auth(events)
+
+    if auth_report.has_auth_flow:
+        console_obj.print(f"\n[bold yellow]Auth Flow Detected[/bold yellow]")
+        console_obj.print(f"  Auth steps: {len(auth_report.auth_steps)}")
+        if auth_report.auth_url:
+            console_obj.print(f"  Auth URL: {auth_report.auth_url}")
+        if auth_report.auth_method:
+            console_obj.print(f"  Method: {auth_report.auth_method}")
+        for step in auth_report.auth_steps:
+            status = f" -> {step.response.status}" if step.response else ""
+            console_obj.print(f"    [{step.step_type}] {step.request.method} {step.request.url}{status}")
+    else:
+        console_obj.print(f"\n[dim]No auth flow steps detected in traffic[/dim]")
+
+    if auth_report.jwt_tokens:
+        console_obj.print(f"\n[bold yellow]JWT Tokens ({len(auth_report.jwt_tokens)})[/bold yellow]")
+        for jwt in auth_report.jwt_tokens:
+            expired_str = " [red]EXPIRED[/red]" if jwt.is_expired else ""
+            console_obj.print(f"  Source: {jwt.source}")
+            if jwt.issuer:
+                console_obj.print(f"    iss: {jwt.issuer}")
+            if jwt.subject:
+                console_obj.print(f"    sub: {jwt.subject}")
+            if jwt.expires_at:
+                console_obj.print(f"    exp: {jwt.expires_at}{expired_str}")
+            if jwt.custom_claims:
+                for k, v in list(jwt.custom_claims.items())[:5]:
+                    console_obj.print(f"    {k}: {str(v)[:80]}")
+
+    if auth_report.encrypted_prefs:
+        console_obj.print(f"\n[bold yellow]Decrypted Prefs ({len(auth_report.encrypted_prefs)})[/bold yellow]")
+        for entry in auth_report.encrypted_prefs:
+            val_preview = entry.value[:80] + "..." if entry.value and len(entry.value) > 80 else entry.value
+            console_obj.print(f"  {entry.key} = {val_preview}")
+
+    if auth_report.tink_decrypts > 0:
+        console_obj.print(f"\n[dim]Tink decrypt operations: {auth_report.tink_decrypts}[/dim]")
+
 
 @app.command()
 def report(
@@ -349,6 +454,7 @@ def report(
     import json
     import os
 
+    from kahlo.analyze.auth import analyze_auth
     from kahlo.analyze.netmodel import analyze_netmodel
     from kahlo.analyze.patterns import analyze_patterns
     from kahlo.analyze.recon import analyze_recon
@@ -403,12 +509,21 @@ def report(
     patterns = analyze_patterns(events, traffic_hosts)
     console.print(f" [green]{len(patterns.sdks)} SDKs detected[/green]")
 
+    console.print("  Auth flow analysis...", end="")
+    auth = analyze_auth(events, package)
+    auth_str = f"{len(auth.auth_steps)} steps"
+    if auth.jwt_tokens:
+        auth_str += f", {len(auth.jwt_tokens)} JWTs"
+    if auth.encrypted_prefs:
+        auth_str += f", {len(auth.encrypted_prefs)} decrypted prefs"
+    console.print(f" [green]{auth_str}[/green]")
+
     # Generate reports
     console.print("\n[bold]Generating reports...[/bold]")
 
     # Markdown report
     console.print("  report.md...", end="")
-    md_content = generate_markdown(session, traffic, vault, recon, netmodel, patterns)
+    md_content = generate_markdown(session, traffic, vault, recon, netmodel, patterns, auth)
     md_path = os.path.join(output_dir, "report.md")
     with open(md_path, "w", encoding="utf-8") as f:
         f.write(md_content)
@@ -443,6 +558,9 @@ def report(
     summary.add_row("SDKs", str(len(patterns.sdks)))
     summary.add_row("Hash Operations", str(netmodel.total_hash_ops))
     summary.add_row("Fingerprint Appetite", f"{recon.fingerprint_appetite}/100")
+    summary.add_row("Auth Steps", str(len(auth.auth_steps)))
+    summary.add_row("JWT Tokens", str(len(auth.jwt_tokens)))
+    summary.add_row("Decrypted Prefs", str(len(auth.encrypted_prefs)))
 
     console.print(summary)
 
