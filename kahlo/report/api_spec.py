@@ -3,10 +3,22 @@ from __future__ import annotations
 
 import json
 from typing import Any
+from urllib.parse import urlparse
 
 from kahlo.analyze.netmodel import NetmodelReport
 from kahlo.analyze.traffic import TrafficReport
 from kahlo.analyze.vault import VaultReport
+
+
+def _endpoint_base_url(url: str, host: str | None, port: int = 443) -> str:
+    """Extract the base URL (scheme + host + optional port) for an endpoint."""
+    parsed = urlparse(url)
+    scheme = parsed.scheme or "https"
+    hostname = parsed.hostname or host or ""
+    p = parsed.port or port
+    if p and p not in (443, 80):
+        return f"{scheme}://{hostname}:{p}"
+    return f"{scheme}://{hostname}"
 
 
 def generate_api_spec(
@@ -36,17 +48,37 @@ def generate_api_spec(
             url += f":{server.port}"
         base_urls.append(url)
 
-    # Determine auth model
-    auth_model: dict[str, Any] = {"type": "unknown"}
+    # Determine auth models — collect all distinct auth types across endpoints
+    auth_models: list[dict[str, Any]] = []
+    seen_auth: set[str] = set()
     for ep in traffic.endpoints:
-        if ep.auth_value:
+        if ep.auth_value and ep.auth_value not in seen_auth:
+            seen_auth.add(ep.auth_value)
             if ep.auth_value == "Token null":
-                auth_model = {"type": "none", "note": "Authorization header present but value is 'Token null'"}
+                auth_models.append({
+                    "type": "none",
+                    "header_value": "Token null",
+                    "note": "Authorization header present but value is 'Token null'",
+                    "hosts": [ep.host or ""],
+                })
             elif ep.auth_value.startswith("Bearer "):
-                auth_model = {"type": "bearer", "token_source": "encrypted_prefs"}
+                auth_models.append({
+                    "type": "bearer",
+                    "token_source": "encrypted_prefs",
+                    "hosts": [ep.host or ""],
+                })
             else:
-                auth_model = {"type": "token", "header": "Authorization", "sample": ep.auth_value[:30]}
-            break
+                auth_models.append({
+                    "type": "token",
+                    "header": "Authorization",
+                    "sample": ep.auth_value[:30],
+                    "hosts": [ep.host or ""],
+                })
+
+    # Backward-compatible single auth_model — pick the first one
+    auth_model: dict[str, Any] = {"type": "unknown"}
+    if auth_models:
+        auth_model = {k: v for k, v in auth_models[0].items() if k != "hosts"}
 
     # Signing info
     signing: dict[str, Any] | None = None
@@ -71,16 +103,20 @@ def generate_api_spec(
             "note": f"Used for {op.op}ing {op.input_length} byte payloads",
         }
 
-    # Build endpoints
+    # Build endpoints with per-endpoint base_url and auth
     endpoints: list[dict[str, Any]] = []
     for ep in traffic.endpoints:
+        base_url = _endpoint_base_url(ep.url, ep.host)
+
         endpoint_entry: dict[str, Any] = {
             "path": ep.path or "/",
             "method": ep.method or "GET",
             "host": ep.host or "",
+            "base_url": base_url,
             "url": ep.url,
             "content_type": ep.content_type,
             "auth_required": ep.has_auth and ep.auth_value != "Token null",
+            "auth_value": ep.auth_value,
             "count": ep.count,
         }
 

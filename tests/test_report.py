@@ -332,3 +332,338 @@ class TestReplayScripts:
             with open(crypto_path) as f:
                 content = f.read()
             assert "AES" in content
+
+
+# --- Method Name Normalization Tests ---
+
+class TestMethodNameNormalization:
+    """Test that URL-to-method-name conversion produces valid, readable Python identifiers."""
+
+    def test_pushwoosh_post_event(self):
+        from kahlo.report.replay import _url_to_method_name
+
+        name = _url_to_method_name("https://api.wavesend.ru/json/1.3/postEvent")
+        assert name == "pushwoosh_post_event"
+        assert name.isidentifier()
+
+    def test_sentry_envelope(self):
+        from kahlo.report.replay import _url_to_method_name
+
+        name = _url_to_method_name("https://sentry.inno.co/api/13/envelope/")
+        assert name == "sentry_envelope"
+        assert name.isidentifier()
+
+    def test_appsflyer_androidevent_strips_query(self):
+        from kahlo.report.replay import _url_to_method_name
+
+        name = _url_to_method_name(
+            "https://launches.appsflyersdk.com/api/v6.17/androidevent?app_id=com.voltmobi.yakitoriya&buildnumber=6.17.5"
+        )
+        assert name == "appsflyer_androidevent"
+        assert name.isidentifier()
+        # Must NOT contain '=' or dots
+        assert "=" not in name
+        assert "." not in name
+
+    def test_branch_install(self):
+        from kahlo.report.replay import _url_to_method_name
+
+        name = _url_to_method_name("https://api2.branch.io/v1/install")
+        assert name == "branch_install"
+        assert name.isidentifier()
+
+    def test_wavesend_get_in_apps(self):
+        from kahlo.report.replay import _url_to_method_name
+
+        name = _url_to_method_name("https://api.wavesend.ru/json/1.3/getInApps")
+        assert name == "pushwoosh_get_in_apps"
+        assert name.isidentifier()
+
+    def test_all_names_are_valid_identifiers(self, analysis_results):
+        """Every endpoint from the real session must produce a valid Python identifier."""
+        from kahlo.report.replay import _url_to_method_name
+
+        for ep in analysis_results["traffic"].endpoints:
+            name = _url_to_method_name(ep.url, ep.host)
+            assert name.isidentifier(), f"Invalid identifier: {name!r} from {ep.url}"
+
+    def test_no_python_keywords(self, analysis_results):
+        """Method names must not be Python keywords."""
+        import keyword as kw
+
+        from kahlo.report.replay import _url_to_method_name
+
+        for ep in analysis_results["traffic"].endpoints:
+            name = _url_to_method_name(ep.url, ep.host)
+            assert not kw.iskeyword(name), f"Keyword collision: {name!r}"
+
+
+# --- Per-Host Routing Tests ---
+
+class TestPerHostRouting:
+    """Test that the generated thin client routes each endpoint to its correct server."""
+
+    def test_client_has_host_constants(self, analysis_results):
+        from kahlo.report.replay import generate_replay
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            generate_replay(
+                tmpdir,
+                analysis_results["traffic"],
+                analysis_results["vault"],
+                analysis_results["netmodel"],
+                "com.voltmobi.yakitoriya",
+            )
+            with open(os.path.join(tmpdir, "client.py")) as f:
+                content = f.read()
+
+            # Must have per-host constants
+            assert "HOST_PUSHWOOSH" in content
+            assert "HOST_SENTRY" in content
+            assert "HOST_BRANCH" in content
+            assert "HOST_APPSFLYER" in content
+            assert "HOST_YAKITORIYA" in content
+
+    def test_pushwoosh_methods_use_pushwoosh_host(self, analysis_results):
+        from kahlo.report.replay import generate_replay
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            generate_replay(
+                tmpdir,
+                analysis_results["traffic"],
+                analysis_results["vault"],
+                analysis_results["netmodel"],
+                "com.voltmobi.yakitoriya",
+            )
+            with open(os.path.join(tmpdir, "client.py")) as f:
+                content = f.read()
+
+            # Pushwoosh methods must route to HOST_PUSHWOOSH, not BASE_URL
+            assert "HOST_PUSHWOOSH}/json/1.3/postEvent" in content
+            assert "HOST_PUSHWOOSH}/json/1.3/getInApps" in content
+
+    def test_sentry_method_uses_sentry_host(self, analysis_results):
+        from kahlo.report.replay import generate_replay
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            generate_replay(
+                tmpdir,
+                analysis_results["traffic"],
+                analysis_results["vault"],
+                analysis_results["netmodel"],
+                "com.voltmobi.yakitoriya",
+            )
+            with open(os.path.join(tmpdir, "client.py")) as f:
+                content = f.read()
+
+            assert "HOST_SENTRY}/api/13/envelope/" in content
+
+    def test_no_method_uses_base_url_for_routing(self, analysis_results):
+        """No endpoint method should route via BASE_URL — all should use HOST_* constants."""
+        from kahlo.report.replay import generate_replay
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            generate_replay(
+                tmpdir,
+                analysis_results["traffic"],
+                analysis_results["vault"],
+                analysis_results["netmodel"],
+                "com.voltmobi.yakitoriya",
+            )
+            with open(os.path.join(tmpdir, "client.py")) as f:
+                content = f.read()
+
+            # Methods should never use {self.BASE_URL} for actual routing
+            # (BASE_URL is kept for backward compatibility only)
+            assert "self.BASE_URL}/" not in content
+
+    def test_client_is_valid_python(self, analysis_results):
+        """The generated client.py must parse as valid Python."""
+        import ast
+
+        from kahlo.report.replay import generate_replay
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            generate_replay(
+                tmpdir,
+                analysis_results["traffic"],
+                analysis_results["vault"],
+                analysis_results["netmodel"],
+                "com.voltmobi.yakitoriya",
+            )
+            with open(os.path.join(tmpdir, "client.py")) as f:
+                content = f.read()
+
+            # Must not raise SyntaxError
+            ast.parse(content)
+
+
+# --- Per-Endpoint Auth Tests ---
+
+class TestPerEndpointAuth:
+    """Test that the generated client applies correct auth per endpoint."""
+
+    def test_pushwoosh_has_token_null(self, analysis_results):
+        from kahlo.report.replay import generate_replay
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            generate_replay(
+                tmpdir,
+                analysis_results["traffic"],
+                analysis_results["vault"],
+                analysis_results["netmodel"],
+                "com.voltmobi.yakitoriya",
+            )
+            with open(os.path.join(tmpdir, "client.py")) as f:
+                content = f.read()
+
+            # Pushwoosh methods should set "Token null" auth
+            assert '"Token null"' in content
+
+    def test_branch_has_no_auth(self, analysis_results):
+        """Branch endpoints should NOT have Authorization header."""
+        from kahlo.report.replay import generate_replay
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            generate_replay(
+                tmpdir,
+                analysis_results["traffic"],
+                analysis_results["vault"],
+                analysis_results["netmodel"],
+                "com.voltmobi.yakitoriya",
+            )
+            with open(os.path.join(tmpdir, "client.py")) as f:
+                content = f.read()
+
+            # Find the branch_install method and check it has no auth
+            lines = content.split("\n")
+            in_branch = False
+            branch_lines = []
+            for line in lines:
+                if "def branch_install" in line:
+                    in_branch = True
+                elif in_branch and line.strip().startswith("def "):
+                    break
+                if in_branch:
+                    branch_lines.append(line)
+
+            branch_code = "\n".join(branch_lines)
+            assert "Authorization" not in branch_code
+
+
+# --- Curl Scripts Full Headers Tests ---
+
+class TestCurlFullHeaders:
+    """Test that curl scripts include all captured headers."""
+
+    def test_sentry_curl_has_x_sentry_auth(self, analysis_results):
+        from kahlo.report.replay import generate_replay
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            generate_replay(
+                tmpdir,
+                analysis_results["traffic"],
+                analysis_results["vault"],
+                analysis_results["netmodel"],
+                "com.voltmobi.yakitoriya",
+            )
+            curl_dir = os.path.join(tmpdir, "curl")
+            # Find the sentry envelope script
+            found = False
+            for fname in os.listdir(curl_dir):
+                if "envelope" in fname:
+                    with open(os.path.join(curl_dir, fname)) as f:
+                        content = f.read()
+                    assert "X-Sentry-Auth" in content
+                    found = True
+                    break
+            assert found, "Sentry envelope curl script not found"
+
+    def test_curl_includes_connection_header(self, analysis_results):
+        """Curl scripts should include Connection header (previously filtered)."""
+        from kahlo.report.replay import generate_replay
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            generate_replay(
+                tmpdir,
+                analysis_results["traffic"],
+                analysis_results["vault"],
+                analysis_results["netmodel"],
+                "com.voltmobi.yakitoriya",
+            )
+            curl_dir = os.path.join(tmpdir, "curl")
+            first_file = sorted(os.listdir(curl_dir))[0]
+            with open(os.path.join(curl_dir, first_file)) as f:
+                content = f.read()
+            # Connection header should now be present
+            assert "Connection:" in content
+
+    def test_curl_includes_accept_encoding(self, analysis_results):
+        """Curl scripts should include Accept-Encoding header (previously filtered)."""
+        from kahlo.report.replay import generate_replay
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            generate_replay(
+                tmpdir,
+                analysis_results["traffic"],
+                analysis_results["vault"],
+                analysis_results["netmodel"],
+                "com.voltmobi.yakitoriya",
+            )
+            curl_dir = os.path.join(tmpdir, "curl")
+            first_file = sorted(os.listdir(curl_dir))[0]
+            with open(os.path.join(curl_dir, first_file)) as f:
+                content = f.read()
+            assert "Accept-Encoding:" in content
+
+
+# --- API Spec Per-Host Base URL Tests ---
+
+class TestAPISpecPerHostBaseURL:
+    """Test that the API spec includes per-endpoint base_url."""
+
+    def test_endpoints_have_base_url(self, analysis_results):
+        from kahlo.report.api_spec import generate_api_spec
+
+        spec_json = generate_api_spec(
+            analysis_results["session"],
+            analysis_results["traffic"],
+            analysis_results["vault"],
+            analysis_results["netmodel"],
+        )
+        spec = json.loads(spec_json)
+
+        for ep in spec["endpoints"]:
+            assert "base_url" in ep, f"Endpoint {ep['url']} missing base_url"
+
+    def test_base_url_matches_host(self, analysis_results):
+        from kahlo.report.api_spec import generate_api_spec
+
+        spec_json = generate_api_spec(
+            analysis_results["session"],
+            analysis_results["traffic"],
+            analysis_results["vault"],
+            analysis_results["netmodel"],
+        )
+        spec = json.loads(spec_json)
+
+        for ep in spec["endpoints"]:
+            # base_url should contain the endpoint's host
+            assert ep["host"] in ep["base_url"], (
+                f"base_url {ep['base_url']} does not contain host {ep['host']}"
+            )
+
+    def test_endpoints_have_auth_value(self, analysis_results):
+        """Each endpoint should expose its auth_value for per-endpoint auth inspection."""
+        from kahlo.report.api_spec import generate_api_spec
+
+        spec_json = generate_api_spec(
+            analysis_results["session"],
+            analysis_results["traffic"],
+            analysis_results["vault"],
+            analysis_results["netmodel"],
+        )
+        spec = json.loads(spec_json)
+
+        for ep in spec["endpoints"]:
+            assert "auth_value" in ep, f"Endpoint {ep['url']} missing auth_value"

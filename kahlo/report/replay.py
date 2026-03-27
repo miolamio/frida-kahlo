@@ -2,13 +2,21 @@
 from __future__ import annotations
 
 import json
+import keyword
 import os
+import re
+from collections import defaultdict
 from typing import Any
+from urllib.parse import urlparse
 
 from kahlo.analyze.netmodel import NetmodelReport
-from kahlo.analyze.traffic import TrafficReport
+from kahlo.analyze.traffic import EndpointInfo, TrafficReport
 from kahlo.analyze.vault import VaultReport
 
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 def _sanitize_filename(name: str) -> str:
     """Convert a URL path into a safe filename."""
@@ -19,22 +27,158 @@ def _sanitize_filename(name: str) -> str:
     return safe[:60]
 
 
-def _build_curl(endpoint: Any) -> str:
-    """Build a curl command for an endpoint."""
+def _url_to_method_name(url: str, host: str | None = None) -> str:
+    """Derive a clean Python method name from a URL.
+
+    Strategy:
+    1. Parse the URL to extract host and path.
+    2. Use the *service* part of the host (e.g. "appsflyer" from
+       "launches.appsflyersdk.com") as a prefix.
+    3. Take the meaningful path segments (skip version numbers like v1, v6.17).
+    4. Strip query parameters entirely.
+    5. Collapse into a valid Python identifier.
+
+    Examples:
+        https://api.wavesend.ru/json/1.3/postEvent        -> pushwoosh_post_event
+        https://sentry.inno.co/api/13/envelope/            -> sentry_envelope
+        https://launches.appsflyersdk.com/api/v6.17/androidevent?app_id=... -> appsflyer_androidevent
+        https://api2.branch.io/v1/install                  -> branch_install
+    """
+    parsed = urlparse(url)
+    hostname = host or parsed.hostname or ""
+    path = parsed.path or "/"
+
+    # --- Derive service prefix from host ---
+    prefix = _host_to_prefix(hostname)
+
+    # --- Extract meaningful path segments ---
+    segments = [s for s in path.split("/") if s]
+    # Filter out noise: version segments (v1, v6.17, 1.3), "json", "api", numeric
+    meaningful: list[str] = []
+    for seg in segments:
+        lower = seg.lower()
+        # Skip pure version patterns: v1, v6.17, 1.3, 13 (purely numeric)
+        if re.match(r'^v?\d+(\.\d+)*$', lower):
+            continue
+        # Skip common boilerplate path prefixes
+        if lower in ("json", "api"):
+            continue
+        meaningful.append(seg)
+
+    # Build method body from meaningful segments
+    if meaningful:
+        body = "_".join(meaningful)
+    else:
+        body = "root"
+
+    # CamelCase -> snake_case (e.g. postEvent -> post_event)
+    body = re.sub(r'([a-z])([A-Z])', r'\1_\2', body)
+    body = body.lower()
+
+    # Replace any non-alphanumeric with underscore
+    body = re.sub(r'[^a-z0-9]', '_', body)
+    # Collapse multiple underscores
+    body = re.sub(r'_+', '_', body).strip('_')
+
+    raw = f"{prefix}_{body}" if prefix else body
+    # Collapse again after join
+    raw = re.sub(r'_+', '_', raw).strip('_')
+
+    if not raw:
+        raw = "request"
+
+    # Ensure it's a valid identifier (not a keyword, starts with letter/underscore)
+    if raw[0].isdigit():
+        raw = f"ep_{raw}"
+    if keyword.iskeyword(raw):
+        raw = f"{raw}_"
+
+    return raw
+
+
+def _host_to_prefix(hostname: str) -> str:
+    """Extract a short service prefix from a hostname.
+
+    Examples:
+        api.wavesend.ru          -> pushwoosh  (known alias)
+        sentry.inno.co           -> sentry
+        launches.appsflyersdk.com -> appsflyer
+        api2.branch.io           -> branch
+        beacon2.yakitoriya.ru    -> yakitoriya
+        firebase-settings.crashlytics.com -> crashlytics
+    """
+    hostname = hostname.lower()
+
+    # Known aliases: map hostname patterns to canonical short names
+    _KNOWN = [
+        ("wavesend", "pushwoosh"),
+        ("appsflyersdk", "appsflyer"),
+        ("appsflyer", "appsflyer"),
+        ("crashlytics", "crashlytics"),
+        ("firebase", "firebase"),
+        ("branch", "branch"),
+        ("sentry", "sentry"),
+        ("amplitude", "amplitude"),
+        ("mixpanel", "mixpanel"),
+        ("adjust", "adjust"),
+        ("appmetrica", "appmetrica"),
+    ]
+
+    for pattern, name in _KNOWN:
+        if pattern in hostname:
+            return name
+
+    # Fallback: take the most specific non-generic domain part
+    parts = hostname.replace("-", ".").split(".")
+    # Filter out generic parts
+    generic = {"com", "ru", "io", "co", "net", "org", "api", "api2", "www",
+               "app", "sdk", "cdn", "v1", "v2"}
+    meaningful = [p for p in parts if p not in generic and len(p) > 1 and not p.isdigit()]
+    if meaningful:
+        # Pick the longest / most specific part
+        return max(meaningful, key=len)
+    return ""
+
+
+def _host_base_url(endpoint: EndpointInfo) -> str:
+    """Build the base URL (scheme + host) for an endpoint."""
+    parsed = urlparse(endpoint.url)
+    scheme = parsed.scheme or "https"
+    host = parsed.hostname or endpoint.host or ""
+    port = parsed.port
+    if port and port not in (443, 80):
+        return f"{scheme}://{host}:{port}"
+    return f"{scheme}://{host}"
+
+
+def _endpoint_auth_header(endpoint: EndpointInfo) -> str | None:
+    """Return the correct Authorization header value for an endpoint, or None."""
+    if endpoint.auth_value:
+        return endpoint.auth_value
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Curl builder
+# ---------------------------------------------------------------------------
+
+def _build_curl(endpoint: EndpointInfo) -> str:
+    """Build a curl command for an endpoint — includes ALL captured headers."""
     lines = [f"curl -X {endpoint.method or 'GET'} \\"]
     lines.append(f"  '{endpoint.url}' \\")
 
     for key, value in (endpoint.sample_headers or {}).items():
-        # Skip some headers that curl adds automatically
-        if key.lower() in ("content-length", "accept-encoding", "connection"):
+        # Skip headers that curl adds automatically
+        if key.lower() in ("content-length", "host"):
             continue
-        lines.append(f"  -H '{key}: {value}' \\")
+        # Escape single quotes in header value
+        escaped = value.replace("'", "'\\''")
+        lines.append(f"  -H '{key}: {escaped}' \\")
 
-    if endpoint.sample_body_preview and endpoint.method in ("POST", "PUT", "PATCH"):
+    if endpoint.sample_body_preview and (endpoint.method or "").upper() in ("POST", "PUT", "PATCH"):
         body = endpoint.sample_body_preview
         # Try to clean up the body for curl
         if body.startswith("{"):
-            # JSON body - try to parse and re-serialize cleanly
             try:
                 parsed = json.loads(body)
                 body = json.dumps(parsed, ensure_ascii=False)
@@ -51,14 +195,18 @@ def _build_curl(endpoint: Any) -> str:
     return "\n".join(lines)
 
 
-def _build_python(endpoint: Any) -> str:
+# ---------------------------------------------------------------------------
+# Python snippet builder
+# ---------------------------------------------------------------------------
+
+def _build_python(endpoint: EndpointInfo) -> str:
     """Build a Python requests snippet for an endpoint."""
     lines = ["import requests", ""]
 
-    # Headers
-    headers = {}
+    # Headers — include all captured headers
+    headers: dict[str, str] = {}
     for key, value in (endpoint.sample_headers or {}).items():
-        if key.lower() not in ("content-length", "accept-encoding", "connection"):
+        if key.lower() not in ("content-length", "host"):
             headers[key] = value
 
     if headers:
@@ -108,6 +256,10 @@ def _build_python(endpoint: Any) -> str:
 
     return "\n".join(lines)
 
+
+# ---------------------------------------------------------------------------
+# Crypto helpers (unchanged logic)
+# ---------------------------------------------------------------------------
 
 def _build_signing_code(netmodel: NetmodelReport) -> str:
     """Build Python signing code if HMAC signing detected."""
@@ -168,13 +320,17 @@ def _build_encryption_code(netmodel: NetmodelReport) -> str:
     return "\n".join(lines)
 
 
+# ---------------------------------------------------------------------------
+# Thin client builder (rewritten)
+# ---------------------------------------------------------------------------
+
 def _build_thin_client(
     traffic: TrafficReport,
     vault: VaultReport,
     netmodel: NetmodelReport,
     package: str,
 ) -> str:
-    """Build a thin client skeleton class."""
+    """Build a thin client skeleton class with per-host routing and clean method names."""
     app_name = package.split(".")[-1].title() if "." in package else package
 
     # Find user-agent from endpoints
@@ -184,6 +340,26 @@ def _build_thin_client(
         if ua:
             user_agent = ua
             break
+
+    # Group endpoints by host
+    host_groups: dict[str, list[EndpointInfo]] = defaultdict(list)
+    for ep in traffic.endpoints:
+        host = ep.host or urlparse(ep.url).hostname or "unknown"
+        host_groups[host].append(ep)
+
+    # Build host URL map — include ALL servers (even those without captured endpoints)
+    host_urls: dict[str, str] = {}
+    for s in traffic.servers:
+        scheme = "https" if s.tls else "http"
+        if s.port not in (443, 80):
+            host_urls[s.host] = f"{scheme}://{s.host}:{s.port}"
+        else:
+            host_urls[s.host] = f"{scheme}://{s.host}"
+    # Overlay with endpoint-derived URLs (more accurate — includes scheme from actual URL)
+    for ep in traffic.endpoints:
+        host = ep.host or urlparse(ep.url).hostname or "unknown"
+        if host not in host_urls:
+            host_urls[host] = _host_base_url(ep)
 
     # Find core API server
     core_host = ""
@@ -209,9 +385,40 @@ def _build_thin_client(
         "",
         "",
         f"class {app_name}Client:",
-        f'    """API client for {package}."""',
+        f'    """API client for {package}.',
+        f"",
+        f"    Servers discovered during analysis:",
+    ])
+
+    # Document all hosts and their roles in the class docstring
+    for s in traffic.servers:
+        prefix = _host_to_prefix(s.host)
+        lines.append(f"        {s.host} ({s.role}) — prefix: {prefix}")
+
+    lines.extend([
+        '    """',
         "",
-        f'    BASE_URL = "https://{core_host}"' if core_host else '    BASE_URL = ""',
+        "    # Per-host base URLs",
+    ])
+
+    # Emit host URL constants
+    for host, url in sorted(host_urls.items()):
+        const_name = _host_to_prefix(host).upper() or host.split(".")[0].upper()
+        # Ensure constant name is a valid identifier
+        const_name = re.sub(r'[^A-Z0-9]', '_', const_name)
+        const_name = re.sub(r'_+', '_', const_name).strip('_')
+        lines.append(f'    HOST_{const_name} = "{url}"')
+
+    # Default BASE_URL for backward compatibility
+    if core_host:
+        core_const = _host_to_prefix(core_host).upper() or core_host.split(".")[0].upper()
+        core_const = re.sub(r'[^A-Z0-9]', '_', core_const)
+        core_const = re.sub(r'_+', '_', core_const).strip('_')
+        lines.append(f"    BASE_URL = HOST_{core_const}")
+    else:
+        lines.append('    BASE_URL = ""')
+
+    lines.extend([
         "",
         "    def __init__(self, token: str | None = None):",
         "        self.session = requests.Session()",
@@ -226,13 +433,9 @@ def _build_thin_client(
     # Add signing key if present
     if netmodel.signing_recipe:
         sr = netmodel.signing_recipe
-        lines.extend([
-            f'        self._signing_key = bytes.fromhex("{sr.key_hex}")',
-        ])
+        lines.append(f'        self._signing_key = bytes.fromhex("{sr.key_hex}")')
 
-    lines.extend([
-        "",
-    ])
+    lines.append("")
 
     # Add signing method if present
     if netmodel.signing_recipe:
@@ -244,41 +447,100 @@ def _build_thin_client(
             "",
         ])
 
-    # Generate methods for each unique endpoint
+    # Generate methods grouped by host
     seen_methods: set[str] = set()
-    for ep in traffic.endpoints:
-        path = ep.path or "/"
-        method = (ep.method or "GET").lower()
+    first_group = True
 
-        # Generate method name from path
-        method_name = _sanitize_filename(path).lower()
-        if method_name in seen_methods:
-            method_name += f"_{method}"
-        seen_methods.add(method_name)
+    for host in sorted(host_groups.keys()):
+        eps = host_groups[host]
+        prefix = _host_to_prefix(host)
+        host_const = (prefix.upper() or host.split(".")[0].upper())
+        host_const = re.sub(r'[^A-Z0-9]', '_', host_const)
+        host_const = re.sub(r'_+', '_', host_const).strip('_')
 
-        lines.extend([
-            f"    def {method_name}(self, **kwargs):",
-            f'        """',
-            f"        {method.upper()} {ep.url}",
-            f'        """',
-        ])
+        if not first_group:
+            lines.append("")
+        first_group = False
 
-        if method in ("post", "put", "patch"):
-            lines.extend([
-                f'        return self.session.{method}(',
-                f'            f"{{self.BASE_URL}}{path}",',
-                f"            json=kwargs,",
-                f"        )",
-            ])
-        else:
-            lines.extend([
-                f'        return self.session.{method}(',
-                f'            f"{{self.BASE_URL}}{path}",',
-                f"            params=kwargs,",
-                f"        )",
-            ])
-
+        lines.append(f"    # --- {host} ({prefix or 'unknown'}) ---")
         lines.append("")
+
+        for ep in eps:
+            method_name = _url_to_method_name(ep.url, ep.host)
+            http_method = (ep.method or "GET").lower()
+
+            # De-duplicate method names
+            if method_name in seen_methods:
+                method_name += f"_{http_method}"
+            if method_name in seen_methods:
+                method_name += f"_{ep.count}"
+            seen_methods.add(method_name)
+
+            # Determine per-endpoint auth
+            auth_value = _endpoint_auth_header(ep)
+
+            # Build docstring with sample body
+            doc_lines = [
+                f"    def {method_name}(self, **kwargs):",
+                f'        """',
+                f"        {http_method.upper()} {ep.url}",
+            ]
+
+            if auth_value:
+                doc_lines.append(f"        Auth: {auth_value}")
+
+            if ep.content_type:
+                doc_lines.append(f"        Content-Type: {ep.content_type}")
+
+            doc_lines.append(f"        Observed: {ep.count} time(s)")
+
+            # Include sample body in docstring if available and parseable
+            if ep.sample_body_preview and ep.sample_body_preview.startswith("{"):
+                try:
+                    parsed_body = json.loads(ep.sample_body_preview)
+                    body_str = json.dumps(parsed_body, indent=8, ensure_ascii=False)
+                    doc_lines.append("")
+                    doc_lines.append("        Sample body:")
+                    for bline in body_str.split("\n"):
+                        doc_lines.append(f"            {bline}")
+                except json.JSONDecodeError:
+                    pass
+
+            doc_lines.append(f'        """')
+            lines.extend(doc_lines)
+
+            # Set per-endpoint auth if it differs from session default
+            if auth_value:
+                lines.append(f"        headers = {{}}")
+                lines.append(f'        headers["Authorization"] = "{auth_value}"')
+            else:
+                lines.append(f"        headers = {{}}")
+
+            path = urlparse(ep.url).path or "/"
+            query = urlparse(ep.url).query
+            if query:
+                full_path = f"{path}?{query}"
+            else:
+                full_path = path
+
+            if http_method in ("post", "put", "patch"):
+                lines.extend([
+                    f'        return self.session.{http_method}(',
+                    f'            f"{{self.HOST_{host_const}}}{full_path}",',
+                    f"            headers=headers,",
+                    f"            json=kwargs,",
+                    f"        )",
+                ])
+            else:
+                lines.extend([
+                    f'        return self.session.{http_method}(',
+                    f'            f"{{self.HOST_{host_const}}}{full_path}",',
+                    f"            headers=headers,",
+                    f"            params=kwargs,",
+                    f"        )",
+                ])
+
+            lines.append("")
 
     # Add usage example
     lines.extend([
@@ -289,12 +551,15 @@ def _build_thin_client(
     ])
 
     for ep in traffic.endpoints[:3]:
-        method = (ep.method or "GET").lower()
-        method_name = _sanitize_filename(ep.path or "/").lower()
+        method_name = _url_to_method_name(ep.url, ep.host)
         lines.append(f"    # response = client.{method_name}()")
 
     return "\n".join(lines)
 
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
 
 def generate_replay(
     output_dir: str,
