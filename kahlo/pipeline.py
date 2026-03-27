@@ -359,6 +359,19 @@ class Pipeline:
         patterns = analyze_patterns(events, traffic_hosts)
         self._status(f"  {len(patterns.sdks)} SDKs detected", "green")
 
+        # Static analysis (from jadx output, if available)
+        static_report = None
+        jadx_output = os.path.join(output_dir, f"{package_name}_jadx")
+        if os.path.isdir(jadx_output):
+            self._status("Static code analysis (jadx output)...")
+            from kahlo.analyze.static import analyze_static
+            static_report = analyze_static(jadx_output)
+            self._status(
+                f"  {len(static_report.urls)} URLs, {len(static_report.secrets)} secrets, "
+                f"{len(static_report.crypto_usage)} crypto patterns",
+                "green",
+            )
+
         # ============================================================
         # STAGE 5: REPORT
         # ============================================================
@@ -378,7 +391,10 @@ class Pipeline:
 
         # Markdown report
         self._status("Generating report.md...")
-        md_content = generate_markdown(session_data, traffic, vault, recon, netmodel, patterns)
+        md_content = generate_markdown(
+            session_data, traffic, vault, recon, netmodel, patterns,
+            static=static_report,
+        )
         md_path = os.path.join(report_dir, "report.md")
         with open(md_path, "w", encoding="utf-8") as f:
             f.write(md_content)

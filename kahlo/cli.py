@@ -449,6 +449,7 @@ def _print_auth_summary(events: list, console_obj) -> None:
 def report(
     session_path: str = typer.Argument(help="Path to session JSON file"),
     output_dir: str = typer.Option(None, "--output", "-o", help="Output directory (default: next to session file)"),
+    jadx_dir: str = typer.Option(None, "--jadx", help="Path to jadx output directory for static analysis"),
 ):
     """Generate analysis report from a session JSON file."""
     import json
@@ -458,6 +459,7 @@ def report(
     from kahlo.analyze.netmodel import analyze_netmodel
     from kahlo.analyze.patterns import analyze_patterns
     from kahlo.analyze.recon import analyze_recon
+    from kahlo.analyze.static import analyze_static
     from kahlo.analyze.traffic import analyze_traffic
     from kahlo.analyze.vault import analyze_vault
     from kahlo.report.api_spec import generate_api_spec
@@ -518,12 +520,20 @@ def report(
         auth_str += f", {len(auth.encrypted_prefs)} decrypted prefs"
     console.print(f" [green]{auth_str}[/green]")
 
+    static_report = None
+    if jadx_dir and os.path.isdir(jadx_dir):
+        console.print("  Static analysis...", end="")
+        static_report = analyze_static(jadx_dir)
+        console.print(f" [green]{len(static_report.urls)} URLs, "
+                      f"{len(static_report.secrets)} secrets, "
+                      f"{len(static_report.crypto_usage)} crypto[/green]")
+
     # Generate reports
     console.print("\n[bold]Generating reports...[/bold]")
 
     # Markdown report
     console.print("  report.md...", end="")
-    md_content = generate_markdown(session, traffic, vault, recon, netmodel, patterns, auth)
+    md_content = generate_markdown(session, traffic, vault, recon, netmodel, patterns, auth, static=static_report)
     md_path = os.path.join(output_dir, "report.md")
     with open(md_path, "w", encoding="utf-8") as f:
         f.write(md_content)
@@ -808,6 +818,90 @@ def stealth_check(
         console.print(f"[red]Detection likely: {result.get('detail', 'app crashed')}[/red]")
     else:
         console.print(f"[yellow]Error during check: {result.get('detail', 'unknown')}[/yellow]")
+
+
+@app.command(name="static")
+def static_cmd(
+    jadx_dir: str = typer.Argument(help="Path to jadx output directory"),
+):
+    """Run static analysis on jadx decompiled output."""
+    import os
+
+    from kahlo.analyze.static import analyze_static
+
+    if not os.path.isdir(jadx_dir):
+        console.print(f"[red]Directory not found: {jadx_dir}[/red]")
+        raise typer.Exit(1)
+
+    console.print(f"Scanning jadx output: [cyan]{jadx_dir}[/cyan]")
+    report = analyze_static(jadx_dir)
+
+    console.print(f"  Files scanned: {report.files_scanned}")
+    console.print(f"  Files skipped: {report.files_skipped}")
+    console.print()
+
+    # Obfuscation
+    obf = report.obfuscation
+    console.print(f"[bold]Obfuscation:[/bold] {obf.level}" +
+                  (f" ({obf.tool})" if obf.tool else ""))
+    if obf.evidence:
+        for ev in obf.evidence:
+            console.print(f"  {ev}")
+    console.print()
+
+    # URLs
+    if report.urls:
+        console.print(f"[bold cyan]URLs found ({len(report.urls)}):[/bold cyan]")
+        for u in report.urls[:50]:
+            console.print(f"  {u.url}")
+            console.print(f"    [dim]{u.file}:{u.line}[/dim]")
+        if len(report.urls) > 50:
+            console.print(f"  ... and {len(report.urls) - 50} more")
+        console.print()
+
+    # Secrets
+    if report.secrets:
+        console.print(f"[bold yellow]Secrets found ({len(report.secrets)}):[/bold yellow]")
+        for s in report.secrets:
+            console.print(f"  [{s.confidence}] {s.name}: {s.value[:40]}...")
+            console.print(f"    [dim]{s.file}:{s.line} (pattern: {s.pattern[:40]})[/dim]")
+        console.print()
+
+    # Crypto
+    if report.crypto_usage:
+        console.print(f"[bold green]Crypto usage ({len(report.crypto_usage)}):[/bold green]")
+
+        crypto_table = Table()
+        crypto_table.add_column("Algorithm", style="cyan")
+        crypto_table.add_column("Usage", style="green")
+        crypto_table.add_column("File", style="dim")
+
+        for c in report.crypto_usage:
+            crypto_table.add_row(c.algorithm, c.usage, f"{c.file}:{c.line}")
+        console.print(crypto_table)
+        console.print()
+
+    # Interesting classes
+    if report.interesting_classes:
+        console.print(f"[bold]Interesting classes ({len(report.interesting_classes)}):[/bold]")
+        for cls in report.interesting_classes[:30]:
+            console.print(f"  {cls}")
+        if len(report.interesting_classes) > 30:
+            console.print(f"  ... and {len(report.interesting_classes) - 30} more")
+        console.print()
+
+    # Summary
+    summary = Table(title="Static Analysis Summary")
+    summary.add_column("Item", style="cyan")
+    summary.add_column("Count", justify="right", style="green")
+
+    summary.add_row("URLs", str(len(report.urls)))
+    summary.add_row("Secrets", str(len(report.secrets)))
+    summary.add_row("Crypto patterns", str(len(report.crypto_usage)))
+    summary.add_row("Interesting classes", str(len(report.interesting_classes)))
+    summary.add_row("Obfuscation level", obf.level)
+
+    console.print(summary)
 
 
 if __name__ == "__main__":

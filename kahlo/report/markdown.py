@@ -8,6 +8,7 @@ from kahlo.analyze.auth import AuthFlowReport
 from kahlo.analyze.netmodel import NetmodelReport
 from kahlo.analyze.patterns import PatternsReport
 from kahlo.analyze.recon import ReconReport
+from kahlo.analyze.static import StaticReport
 from kahlo.analyze.traffic import TrafficReport
 from kahlo.analyze.vault import VaultReport
 
@@ -29,6 +30,7 @@ def generate_markdown(
     netmodel: NetmodelReport,
     patterns: PatternsReport,
     auth: AuthFlowReport | None = None,
+    static: StaticReport | None = None,
 ) -> str:
     """Generate a comprehensive Markdown analysis report.
 
@@ -39,6 +41,8 @@ def generate_markdown(
         recon: Recon analysis results.
         netmodel: Netmodel analysis results.
         patterns: Pattern detection results.
+        auth: Auth flow analysis results (optional).
+        static: Static code analysis results (optional).
 
     Returns:
         Complete Markdown report string.
@@ -461,6 +465,68 @@ def generate_markdown(
 
     lines.append("---")
     lines.append("")
+
+    # --- 6b. Static Code Analysis (if available) ---
+    if static and (static.urls or static.secrets or static.crypto_usage):
+        lines.append("## 6b. Static Code Analysis (jadx)")
+        lines.append("")
+        lines.append(f"Scanned **{static.files_scanned}** source files "
+                     f"({static.files_skipped} skipped, obfuscation: {static.obfuscation.level}).")
+        lines.append("")
+
+        if static.urls:
+            lines.append("### Hardcoded URLs")
+            lines.append("")
+            lines.append("| URL | File | Line |")
+            lines.append("|-----|------|------|")
+            for u in static.urls[:30]:
+                lines.append(f"| `{u.url}` | `{u.file}` | {u.line or 'N/A'} |")
+            if len(static.urls) > 30:
+                lines.append(f"\n*... and {len(static.urls) - 30} more URLs*")
+            lines.append("")
+
+        if static.secrets:
+            lines.append("### Hardcoded Secrets")
+            lines.append("")
+            lines.append("| Type | Value | Confidence | File |")
+            lines.append("|------|-------|------------|------|")
+            for s in static.secrets[:20]:
+                masked = _mask_secret(s.value, 12)
+                lines.append(f"| {s.name} | `{masked}` | **{s.confidence}** | `{s.file}:{s.line or 'N/A'}` |")
+            if len(static.secrets) > 20:
+                lines.append(f"\n*... and {len(static.secrets) - 20} more secrets*")
+            lines.append("")
+
+        if static.crypto_usage:
+            lines.append("### Crypto API Usage in Source")
+            lines.append("")
+            lines.append("| Algorithm | Usage | File |")
+            lines.append("|-----------|-------|------|")
+            for c in static.crypto_usage:
+                lines.append(f"| `{c.algorithm}` | {c.usage} | `{c.file}:{c.line or 'N/A'}` |")
+            lines.append("")
+
+        if static.obfuscation.evidence:
+            lines.append("### Obfuscation Assessment")
+            lines.append("")
+            lines.append(f"**Level:** {static.obfuscation.level}")
+            if static.obfuscation.tool:
+                lines.append(f"**Tool:** {static.obfuscation.tool}")
+            for ev in static.obfuscation.evidence:
+                lines.append(f"- {ev}")
+            lines.append("")
+
+        if static.interesting_classes:
+            lines.append("### Interesting Classes")
+            lines.append("")
+            for cls in static.interesting_classes[:20]:
+                lines.append(f"- `{cls}`")
+            if len(static.interesting_classes) > 20:
+                lines.append(f"- ... and {len(static.interesting_classes) - 20} more")
+            lines.append("")
+
+        lines.append("---")
+        lines.append("")
 
     # --- 7. SDK Inventory ---
     lines.append("## 7. SDK Inventory")
