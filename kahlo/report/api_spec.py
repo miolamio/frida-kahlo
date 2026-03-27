@@ -136,6 +136,18 @@ def generate_api_spec(
                 except json.JSONDecodeError:
                     pass
 
+        # Body decoding info (Improvement 6)
+        if ep.request_body_format:
+            endpoint_entry["request_body_format"] = ep.request_body_format
+        if ep.request_body_fields:
+            endpoint_entry["request_body_fields"] = ep.request_body_fields
+        if ep.response_body_format:
+            endpoint_entry["response_body_format"] = ep.response_body_format
+        if ep.response_body_fields:
+            endpoint_entry["response_body_fields"] = ep.response_body_fields
+        if ep.body_schema:
+            endpoint_entry["body_schema"] = ep.body_schema
+
         endpoints.append(endpoint_entry)
 
     # Extracted keys and tokens relevant to API usage

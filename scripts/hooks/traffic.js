@@ -143,6 +143,8 @@
                                 var reqBody = "";
                                 var reqBodyLen = 0;
                                 var reqFormat = "empty";
+                                var reqBodyParsed = null;
+                                var reqBodyFields = null;
                                 try {
                                     var requestBody = request.body();
                                     if (requestBody != null) {
@@ -151,7 +153,10 @@
                                         var bodyStr = buf.readString(UTF8);
                                         reqBodyLen = bodyStr.length;
                                         reqBody = truncBody(bodyStr);
-                                        reqFormat = guessBodyFormat(reqBody);
+                                        var reqProcessed = processBody(reqBody);
+                                        reqFormat = reqProcessed.format;
+                                        reqBodyParsed = reqProcessed.parsed;
+                                        reqBodyFields = reqProcessed.fields;
                                     }
                                 } catch (e) {}
 
@@ -165,6 +170,8 @@
                                     body_format: reqFormat,
                                     source: "okhttp3"
                                 };
+                                if (reqBodyParsed) reqEvent.body_parsed = reqBodyParsed;
+                                if (reqBodyFields) reqEvent.body_fields = reqBodyFields;
 
                                 // Auth flow detection on request
                                 var reqAuth = detectAuthFlow(url, reqHeaders, reqBody, "request");
@@ -188,6 +195,8 @@
                                 var resBody = "";
                                 var resBodyLen = 0;
                                 var resFormat = "empty";
+                                var resBodyParsed = null;
+                                var resBodyFields = null;
                                 try {
                                     var responseBody = response.body();
                                     if (responseBody != null) {
@@ -197,7 +206,10 @@
                                         var resStr = resBuf.readString(UTF8);
                                         resBodyLen = resStr.length;
                                         resBody = truncBody(resStr);
-                                        resFormat = guessBodyFormat(resBody);
+                                        var resProcessed = processBody(resBody);
+                                        resFormat = resProcessed.format;
+                                        resBodyParsed = resProcessed.parsed;
+                                        resBodyFields = resProcessed.fields;
                                     }
                                 } catch (e) {}
 
@@ -212,6 +224,8 @@
                                     elapsed_ms: elapsed,
                                     source: "okhttp3"
                                 };
+                                if (resBodyParsed) resEvent.body_parsed = resBodyParsed;
+                                if (resBodyFields) resEvent.body_fields = resBodyFields;
 
                                 // Auth flow detection on response
                                 var resAuth = detectAuthFlow(url, resHeaders, resBody, "response");
@@ -336,6 +350,8 @@
                             var reqBody = "";
                             var reqBodyLen = 0;
                             var reqFormat = "empty";
+                            var reqBodyParsed = null;
+                            var reqBodyFields = null;
                             try {
                                 var requestBody = request.body();
                                 if (requestBody != null) {
@@ -347,7 +363,10 @@
                                     var bodyStr = buf.readString(sysUtf8);
                                     reqBodyLen = bodyStr.length;
                                     reqBody = truncBody(bodyStr);
-                                    reqFormat = guessBodyFormat(reqBody);
+                                    var reqProcessed = processBody(reqBody);
+                                    reqFormat = reqProcessed.format;
+                                    reqBodyParsed = reqProcessed.parsed;
+                                    reqBodyFields = reqProcessed.fields;
                                 }
                             } catch(e) {}
 
@@ -361,6 +380,8 @@
                                 body_format: reqFormat,
                                 source: "system_okhttp"
                             };
+                            if (reqBodyParsed) sysReqEvent.body_parsed = reqBodyParsed;
+                            if (reqBodyFields) sysReqEvent.body_fields = reqBodyFields;
 
                             // Auth flow detection on system_okhttp request
                             var sysReqAuth = detectAuthFlow(url, reqHeaders, reqBody, "request");
@@ -388,6 +409,8 @@
                             var resBody = "";
                             var resBodyLen = 0;
                             var resFormat = "empty";
+                            var resBodyParsed = null;
+                            var resBodyFields = null;
                             try {
                                 var responseBody = response.body();
                                 if (responseBody != null) {
@@ -400,7 +423,10 @@
                                     var resStr = resBuf.readString(sysUtf82);
                                     resBodyLen = resStr.length;
                                     resBody = truncBody(resStr);
-                                    resFormat = guessBodyFormat(resBody);
+                                    var resProcessed = processBody(resBody);
+                                    resFormat = resProcessed.format;
+                                    resBodyParsed = resProcessed.parsed;
+                                    resBodyFields = resProcessed.fields;
                                 }
                             } catch(e) {}
 
@@ -414,6 +440,8 @@
                                 body_format: resFormat,
                                 source: "system_okhttp"
                             };
+                            if (resBodyParsed) sysResEvent.body_parsed = resBodyParsed;
+                            if (resBodyFields) sysResEvent.body_fields = resBodyFields;
 
                             // Auth flow detection on system_okhttp response
                             var sysResAuth = detectAuthFlow(resUrl, resHeaders, resBody, "response");

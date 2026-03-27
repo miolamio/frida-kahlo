@@ -6,6 +6,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from kahlo.analyze.decoder import BodyDecoder, DecodedBody
+
 
 class ServerInfo(BaseModel):
     """A unique server (host:port) observed in TCP connections."""
@@ -29,6 +31,12 @@ class EndpointInfo(BaseModel):
     auth_value: str | None = None
     sample_headers: dict[str, str] = Field(default_factory=dict)
     sample_body_preview: str | None = None
+    # Body decoding fields (Improvement 6)
+    request_body_format: str | None = None
+    request_body_fields: list[str] | None = None
+    response_body_format: str | None = None
+    response_body_fields: list[str] | None = None
+    body_schema: list[str] | None = None  # merged field names from req+resp
 
 
 class TCPConnection(BaseModel):
@@ -189,6 +197,8 @@ def analyze_traffic(events: list[dict[str, Any]], package: str | None = None) ->
     server_map: dict[tuple[str, str | None, int], int] = {}
     # Track unique endpoints: key = (method, host, path)
     endpoint_map: dict[tuple[str | None, str | None, str | None], EndpointInfo] = {}
+    # Map request index to endpoint key for response correlation
+    index_to_ep_key: dict[int, tuple[str | None, str | None, str | None]] = {}
 
     for event in traffic_events:
         etype = event.get("type", "")
@@ -209,6 +219,7 @@ def analyze_traffic(events: list[dict[str, Any]], package: str | None = None) ->
             url = data.get("url", "")
             req_headers = data.get("headers", {})
             body = data.get("body", "")
+            req_index = data.get("index", 0)
 
             # Extract host and path from URL
             host = ""
@@ -228,11 +239,28 @@ def analyze_traffic(events: list[dict[str, Any]], package: str | None = None) ->
                     path = url
                     host = req_headers.get("Host", "")
 
+            # Decode request body
+            content_type = req_headers.get("Content-Type") or req_headers.get("content-type")
+            req_decoded: DecodedBody | None = None
+            req_body_format: str | None = None
+            req_body_fields: list[str] | None = None
+
+            # Use JS-side fields if available, else decode Python-side
+            js_format = data.get("body_format")
+            js_fields = data.get("body_fields")
+
+            if body:
+                req_decoded = BodyDecoder.decode(body, content_type=content_type)
+                req_body_format = req_decoded.format
+                req_body_fields = req_decoded.fields
+            elif js_format and js_format != "empty":
+                req_body_format = js_format
+                req_body_fields = js_fields
+
             ep_key = (method, host, path)
             if ep_key in endpoint_map:
                 endpoint_map[ep_key].count += 1
             else:
-                content_type = req_headers.get("Content-Type") or req_headers.get("content-type")
                 auth_header = req_headers.get("Authorization") or req_headers.get("authorization")
                 endpoint_map[ep_key] = EndpointInfo(
                     url=url or f"https://{host}{path}",
@@ -245,12 +273,39 @@ def analyze_traffic(events: list[dict[str, Any]], package: str | None = None) ->
                     auth_value=auth_header,
                     sample_headers=req_headers,
                     sample_body_preview=body[:500] if body else None,
+                    request_body_format=req_body_format,
+                    request_body_fields=req_body_fields,
                 )
 
+            # Track index -> endpoint key for response correlation
+            if req_index:
+                index_to_ep_key[req_index] = ep_key
+
         elif etype == "http_response":
-            # Structured HTTP response — update endpoint info if we can match
-            # Response events contain url and status which enrich endpoint data
-            pass  # Endpoint info is built from requests; responses are tracked for stats
+            # Structured HTTP response — enrich endpoint with response body info
+            res_body = data.get("body", "")
+            res_headers = data.get("headers", {})
+            res_index = data.get("index", 0)
+            res_url = data.get("url", "")
+
+            # Decode response body
+            res_content_type = res_headers.get("Content-Type") or res_headers.get("content-type")
+            res_body_format: str | None = None
+            res_body_fields: list[str] | None = None
+
+            if res_body:
+                res_decoded = BodyDecoder.decode(res_body, content_type=res_content_type)
+                res_body_format = res_decoded.format
+                res_body_fields = res_decoded.fields
+
+            # Correlate response to request endpoint
+            ep_key_for_res = index_to_ep_key.get(res_index)
+            if ep_key_for_res and ep_key_for_res in endpoint_map:
+                ep = endpoint_map[ep_key_for_res]
+                if res_body_format and not ep.response_body_format:
+                    ep.response_body_format = res_body_format
+                if res_body_fields and not ep.response_body_fields:
+                    ep.response_body_fields = res_body_fields
 
         elif etype == "ssl_raw":
             direction = data.get("direction", "out")
@@ -284,21 +339,47 @@ def analyze_traffic(events: list[dict[str, Any]], package: str | None = None) ->
                 if ep_key in endpoint_map:
                     endpoint_map[ep_key].count += 1
                 else:
-                    content_type = parsed.get("headers", {}).get("Content-Type")
+                    ssl_content_type = parsed.get("headers", {}).get("Content-Type")
                     auth_header = parsed.get("headers", {}).get("Authorization")
                     url = f"https://{host}{path}" if host else path
+                    ssl_body_preview = parsed.get("body_preview", "")[:500] if parsed.get("body_preview") else None
+
+                    # Decode SSL body if present
+                    ssl_req_format: str | None = None
+                    ssl_req_fields: list[str] | None = None
+                    if ssl_body_preview:
+                        ssl_decoded = BodyDecoder.decode(ssl_body_preview, content_type=ssl_content_type)
+                        ssl_req_format = ssl_decoded.format
+                        ssl_req_fields = ssl_decoded.fields
+
                     endpoint_map[ep_key] = EndpointInfo(
                         url=url,
                         method=capture.parsed_method,
                         host=host,
                         path=path,
                         count=1,
-                        content_type=content_type,
+                        content_type=ssl_content_type,
                         has_auth=bool(auth_header and auth_header != "Token null"),
                         auth_value=auth_header,
                         sample_headers=parsed.get("headers", {}),
-                        sample_body_preview=parsed.get("body_preview", "")[:500] if parsed.get("body_preview") else None,
+                        sample_body_preview=ssl_body_preview,
+                        request_body_format=ssl_req_format,
+                        request_body_fields=ssl_req_fields,
                     )
+
+    # Compute body_schema: merge request + response field names per endpoint
+    for ep in endpoint_map.values():
+        schema_fields: list[str] = []
+        if ep.request_body_fields:
+            for f in ep.request_body_fields:
+                if f not in schema_fields:
+                    schema_fields.append(f)
+        if ep.response_body_fields:
+            for f in ep.response_body_fields:
+                if f not in schema_fields:
+                    schema_fields.append(f)
+        if schema_fields:
+            ep.body_schema = schema_fields
 
     # Build server list
     servers: list[ServerInfo] = []

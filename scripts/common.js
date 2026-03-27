@@ -206,7 +206,96 @@ function guessBodyFormat(s) {
     if (c === '{' || c === '[') return "json";
     if (s.indexOf("<?xml") === 0) return "xml";
     if (s.indexOf("--") === 0) return "multipart";
+    // Check for form-urlencoded: contains = and & with no spaces at start
+    if (s.indexOf("=") !== -1 && s.indexOf(" ") > s.indexOf("=")) return "form";
     return "text";
+}
+
+function processBody(bodyStr, maxLen) {
+    // Process a body string: detect format, attempt JSON parse, extract preview
+    // Returns {format, preview, parsed, fields, length}
+    maxLen = maxLen || 4096;
+    if (!bodyStr || bodyStr.length === 0) {
+        return {format: "empty", preview: "", parsed: null, fields: null, length: 0};
+    }
+
+    var preview = bodyStr.length > maxLen ? bodyStr.substring(0, maxLen) : bodyStr;
+    var format = guessBodyFormat(preview);
+    var parsed = null;
+    var fields = null;
+
+    if (format === "json") {
+        try {
+            parsed = JSON.parse(preview);
+            if (parsed && typeof parsed === "object") {
+                if (Array.isArray(parsed)) {
+                    if (parsed.length > 0 && typeof parsed[0] === "object" && parsed[0] !== null) {
+                        fields = Object.keys(parsed[0]);
+                    }
+                } else {
+                    fields = Object.keys(parsed);
+                }
+            }
+        } catch(e) {
+            // Truncated JSON — still report as json format
+            parsed = null;
+        }
+    } else if (format === "form") {
+        try {
+            // Parse key=value&key2=value2
+            var pairs = preview.split("&");
+            var formFields = [];
+            for (var i = 0; i < pairs.length; i++) {
+                var eqIdx = pairs[i].indexOf("=");
+                if (eqIdx > 0) {
+                    formFields.push(pairs[i].substring(0, eqIdx));
+                }
+            }
+            if (formFields.length > 0) {
+                fields = formFields;
+            }
+        } catch(e) {}
+    }
+
+    return {
+        format: format,
+        preview: preview,
+        parsed: parsed,
+        fields: fields,
+        length: bodyStr.length
+    };
+}
+
+function processBodyBytes(buf, off, len, maxLen) {
+    // Process raw byte array: detect binary format, handle gzip flag
+    // Returns {format, preview, parsed, fields, length, is_gzip}
+    maxLen = maxLen || 4096;
+    if (!buf || len < 1) {
+        return {format: "empty", preview: "", parsed: null, fields: null, length: 0, is_gzip: false};
+    }
+
+    var first = buf[off] & 0xFF;
+    var second = len > 1 ? (buf[off + 1] & 0xFF) : 0;
+    var is_gzip = (first === 0x1F && second === 0x8B);
+    var format = detectFormat(buf, len);
+    var preview = readableBytes(buf, off, len, maxLen);
+
+    // For text-based formats, delegate to processBody for parsing
+    if (format === "json" || format === "binary") {
+        // Try reading as string
+        var result = processBody(preview, maxLen);
+        result.is_gzip = is_gzip;
+        return result;
+    }
+
+    return {
+        format: format,
+        preview: preview,
+        parsed: null,
+        fields: null,
+        length: len,
+        is_gzip: is_gzip
+    };
 }
 
 // Extract headers from com.android.okhttp.Headers or okhttp3.Headers

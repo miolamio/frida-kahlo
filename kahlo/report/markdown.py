@@ -140,14 +140,15 @@ def generate_markdown(
     if traffic.endpoints:
         lines.append("### 3.1 HTTP Endpoints")
         lines.append("")
-        lines.append("| Method | Host | Path | Auth | Content-Type |")
-        lines.append("|--------|------|------|------|--------------|")
+        lines.append("| Method | Host | Path | Auth | Body Format | Content-Type |")
+        lines.append("|--------|------|------|------|-------------|--------------|")
         for ep in traffic.endpoints:
             auth_str = "Yes" if ep.has_auth else "No"
             if ep.auth_value:
                 auth_str = f"`{_mask_secret(ep.auth_value, 15)}`"
             ct = ep.content_type or "N/A"
-            lines.append(f"| {ep.method or 'N/A'} | `{ep.host or 'N/A'}` | `{ep.path or 'N/A'}` | {auth_str} | {ct} |")
+            body_fmt = ep.request_body_format or ep.response_body_format or "N/A"
+            lines.append(f"| {ep.method or 'N/A'} | `{ep.host or 'N/A'}` | `{ep.path or 'N/A'}` | {auth_str} | {body_fmt} | {ct} |")
         lines.append("")
 
         # Detailed endpoint info
@@ -156,6 +157,33 @@ def generate_markdown(
         for ep in traffic.endpoints:
             lines.append(f"**{ep.method} {ep.url}** (seen {ep.count}x)")
             lines.append("")
+
+            # Body format and schema info
+            if ep.request_body_format and ep.request_body_format != "empty":
+                fmt_line = f"Request body: **{ep.request_body_format}**"
+                if ep.request_body_fields:
+                    fmt_line += f" — fields: `{', '.join(ep.request_body_fields[:10])}`"
+                    if len(ep.request_body_fields) > 10:
+                        fmt_line += f" (+{len(ep.request_body_fields) - 10} more)"
+                lines.append(fmt_line)
+                lines.append("")
+
+            if ep.response_body_format and ep.response_body_format != "empty":
+                fmt_line = f"Response body: **{ep.response_body_format}**"
+                if ep.response_body_fields:
+                    fmt_line += f" — fields: `{', '.join(ep.response_body_fields[:10])}`"
+                    if len(ep.response_body_fields) > 10:
+                        fmt_line += f" (+{len(ep.response_body_fields) - 10} more)"
+                lines.append(fmt_line)
+                lines.append("")
+
+            if ep.request_body_format == "protobuf":
+                lines.append(f"*Binary protocol (protobuf) detected*")
+                lines.append("")
+            elif ep.response_body_format == "protobuf":
+                lines.append(f"*Binary protocol (protobuf) in response*")
+                lines.append("")
+
             if ep.sample_headers:
                 lines.append("```")
                 for k, v in ep.sample_headers.items():
