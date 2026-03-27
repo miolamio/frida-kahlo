@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/banner.jpg" alt="Frida-Kahlo" width="600">
+</p>
+
 # Frida-Kahlo
 
 CLI framework for automated Android app analysis via Frida.
