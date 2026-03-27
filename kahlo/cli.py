@@ -460,6 +460,85 @@ def report(
             console.print(f"  {sdk.name}{version} ({sdk.category})")
 
 
+@app.command()
+def monitor(
+    package: str = typer.Argument(help="Package name to monitor"),
+):
+    """Live interactive monitoring: spawn app with hooks, display events in real time."""
+    import time
+
+    from kahlo.device.adb import ADB, ADBError
+    from kahlo.device.frida_server import FridaServer
+    from kahlo.instrument.engine import FridaEngine
+    from kahlo.instrument.loader import ScriptLoader
+    from kahlo.instrument.session import Session
+    from kahlo.monitor import LiveMonitor
+    from kahlo.stealth.manager import StealthManager
+
+    # --- 1. Setup device + frida-server ---
+    adb = ADB()
+    try:
+        devices = adb.devices()
+    except ADBError as e:
+        console.print(f"[red]ADB error: {e}[/red]")
+        raise typer.Exit(1)
+
+    if not devices:
+        console.print("[red]No devices connected[/red]")
+        raise typer.Exit(1)
+
+    adb = ADB(serial=devices[0].serial)
+    fs = FridaServer(adb)
+
+    if not fs.is_running():
+        console.print("Starting frida-server...")
+        fs.start()
+        time.sleep(1)
+
+    stealth = StealthManager(adb, fs)
+    engine = FridaEngine(stealth)
+
+    # --- 2. Compose scripts ---
+    loader = ScriptLoader()
+    console.print(f"[cyan]Composing scripts for {package}...[/cyan]")
+
+    bypass_scripts = ["bypass/stealth", "bypass/ssl_unpin"]
+    hook_scripts = ["common", "hooks/traffic", "hooks/vault", "hooks/recon", "hooks/netmodel"]
+
+    extra_scripts = []
+    available = loader.list_scripts()
+    if "discovery" in available:
+        extra_scripts.append("discovery")
+
+    script_source = loader.compose(
+        bypass=bypass_scripts,
+        hooks=hook_scripts + extra_scripts,
+    )
+
+    console.print(f"  Script size: {len(script_source):,} bytes")
+
+    # --- 3. Create session + monitor ---
+    session = Session(package=package)
+    live_monitor = LiveMonitor(package=package, console=console)
+
+    console.print(
+        "\n[bold]Starting live monitor...[/bold]"
+    )
+    console.print("[dim]Interact with the app on the device. Press Ctrl+C to stop.[/dim]\n")
+
+    # --- 4. Run ---
+    try:
+        live_monitor.run(
+            engine=engine,
+            script_source=script_source,
+            session=session,
+        )
+    except Exception as e:
+        console.print(f"\n[red]Monitor error: {e}[/red]")
+        engine.cleanup()
+        raise typer.Exit(1)
+
+
 @app.command(name="analyze")
 def analyze_cmd(
     target: str = typer.Argument(help="App name or package name (com.xxx.yyy)"),
