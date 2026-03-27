@@ -203,6 +203,55 @@ def analyze_traffic(events: list[dict[str, Any]], package: str | None = None) ->
             key = (host, ip, port)
             server_map[key] = server_map.get(key, 0) + 1
 
+        elif etype == "http_request":
+            # Structured HTTP request from OkHttp interceptor or SSL parser
+            method = data.get("method", "")
+            url = data.get("url", "")
+            req_headers = data.get("headers", {})
+            body = data.get("body", "")
+
+            # Extract host and path from URL
+            host = ""
+            path = ""
+            if url:
+                # Parse URL to get host and path
+                if "://" in url:
+                    after_scheme = url.split("://", 1)[1]
+                    slash_idx = after_scheme.find("/")
+                    if slash_idx >= 0:
+                        host = after_scheme[:slash_idx]
+                        path = after_scheme[slash_idx:]
+                    else:
+                        host = after_scheme
+                        path = "/"
+                else:
+                    path = url
+                    host = req_headers.get("Host", "")
+
+            ep_key = (method, host, path)
+            if ep_key in endpoint_map:
+                endpoint_map[ep_key].count += 1
+            else:
+                content_type = req_headers.get("Content-Type") or req_headers.get("content-type")
+                auth_header = req_headers.get("Authorization") or req_headers.get("authorization")
+                endpoint_map[ep_key] = EndpointInfo(
+                    url=url or f"https://{host}{path}",
+                    method=method,
+                    host=host,
+                    path=path,
+                    count=1,
+                    content_type=content_type,
+                    has_auth=bool(auth_header and auth_header != "Token null"),
+                    auth_value=auth_header,
+                    sample_headers=req_headers,
+                    sample_body_preview=body[:500] if body else None,
+                )
+
+        elif etype == "http_response":
+            # Structured HTTP response — update endpoint info if we can match
+            # Response events contain url and status which enrich endpoint data
+            pass  # Endpoint info is built from requests; responses are tracked for stats
+
         elif etype == "ssl_raw":
             direction = data.get("direction", "out")
             preview = data.get("preview", "")
@@ -226,7 +275,7 @@ def analyze_traffic(events: list[dict[str, Any]], package: str | None = None) ->
             )
             ssl_captures.append(capture)
 
-            # Build endpoint info from outgoing requests
+            # Build endpoint info from outgoing requests (fallback from raw SSL)
             if direction == "out" and capture.parsed_method:
                 host = capture.parsed_host or ""
                 path = capture.parsed_url or ""
@@ -270,7 +319,14 @@ def analyze_traffic(events: list[dict[str, Any]], package: str | None = None) ->
     # Deduplicate endpoints and sort by count
     endpoints = sorted(endpoint_map.values(), key=lambda e: e.count, reverse=True)
 
-    total_requests = sum(1 for c in ssl_captures if c.direction == "out" and c.parsed_method)
+    # Count requests from both structured http_request events and parsed ssl_raw
+    structured_requests = sum(
+        1 for e in traffic_events if e.get("type") == "http_request"
+    )
+    ssl_parsed_requests = sum(
+        1 for c in ssl_captures if c.direction == "out" and c.parsed_method
+    )
+    total_requests = structured_requests + ssl_parsed_requests
 
     return TrafficReport(
         servers=servers,

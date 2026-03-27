@@ -1,5 +1,4 @@
 """Tests for hook scripts — syntax validation and basic device loading."""
-import json
 import time
 
 import pytest
@@ -134,6 +133,54 @@ class TestHookComposition:
         assert "hooks/vault" in scripts
         assert "hooks/recon" in scripts
         assert "hooks/netmodel" in scripts
+
+
+class TestTrafficHookLevels:
+    """Test that traffic hook activates system OkHttp on yakitoriya."""
+
+    def test_system_okhttp_hook_activates(self, engine):
+        """Verify the system_okhttp_engine hook fires on yakitoriya."""
+        loader = ScriptLoader()
+        source = loader.compose(
+            bypass=["bypass/stealth"],
+            hooks=["common", "hooks/traffic"],
+        )
+
+        session = Session(package=TEST_PACKAGE)
+        engine.spawn(
+            TEST_PACKAGE,
+            script_source=source,
+            on_message=session.on_message,
+        )
+        time.sleep(15)
+        engine.cleanup()
+
+        # Check hook_status events for system_okhttp_engine
+        status_events = [
+            e for e in session.events
+            if e.get("module") == "traffic" and e.get("type") == "hook_status"
+        ]
+        status_levels = [e.get("data", {}).get("level") for e in status_events]
+        assert "system_okhttp_engine" in status_levels, (
+            f"system_okhttp_engine not in status levels: {status_levels}"
+        )
+
+        # Check that we got at least one http_request event
+        http_requests = [
+            e for e in session.events
+            if e.get("module") == "traffic" and e.get("type") == "http_request"
+        ]
+        assert len(http_requests) > 0, (
+            f"No http_request events. Total events: {len(session.events)}, "
+            f"types: {set(e.get('type') for e in session.events)}"
+        )
+
+        # Check no JS syntax errors
+        syntax_errors = [
+            e for e in session.events
+            if e.get("module") == "frida" and "SyntaxError" in str(e.get("data", {}))
+        ]
+        assert len(syntax_errors) == 0, f"Syntax errors: {syntax_errors}"
 
 
 class TestSessionStats:

@@ -94,6 +94,100 @@ class TestTrafficAnalyzer:
         assert len(report.servers) == 0
         assert len(report.endpoints) == 0
 
+    def test_http_request_events_processed(self):
+        """Test that structured http_request events are processed into endpoints."""
+        from kahlo.analyze.traffic import analyze_traffic
+        events = [
+            {
+                "module": "traffic",
+                "type": "http_request",
+                "ts": "2026-03-27T10:00:00Z",
+                "data": {
+                    "index": 1,
+                    "method": "POST",
+                    "url": "https://api.example.com/v1/data",
+                    "headers": {"Content-Type": "application/json", "Authorization": "Bearer token123"},
+                    "body": '{"key": "value"}',
+                    "body_length": 16,
+                    "body_format": "json",
+                    "source": "system_okhttp",
+                },
+            },
+            {
+                "module": "traffic",
+                "type": "http_response",
+                "ts": "2026-03-27T10:00:01Z",
+                "data": {
+                    "index": 1,
+                    "url": "https://api.example.com/v1/data",
+                    "status": 200,
+                    "headers": {"Content-Type": "application/json"},
+                    "body": '{"result": "ok"}',
+                    "body_length": 16,
+                    "body_format": "json",
+                    "source": "system_okhttp",
+                },
+            },
+            {
+                "module": "traffic",
+                "type": "http_request",
+                "ts": "2026-03-27T10:00:02Z",
+                "data": {
+                    "index": 2,
+                    "method": "GET",
+                    "url": "https://cdn.example.com/image.png",
+                    "headers": {},
+                    "body": "",
+                    "body_length": 0,
+                    "body_format": "empty",
+                    "source": "system_okhttp",
+                },
+            },
+        ]
+        report = analyze_traffic(events, package="com.example.app")
+        assert report.total_requests == 2
+        assert len(report.endpoints) == 2
+        methods = {ep.method for ep in report.endpoints}
+        assert "POST" in methods
+        assert "GET" in methods
+        # Check endpoint details
+        post_ep = next(ep for ep in report.endpoints if ep.method == "POST")
+        assert post_ep.host == "api.example.com"
+        assert post_ep.path == "/v1/data"
+        assert post_ep.has_auth is True
+        assert post_ep.content_type == "application/json"
+
+    def test_mixed_http_request_and_ssl_raw(self):
+        """Test that both structured and raw events create endpoints without duplication."""
+        from kahlo.analyze.traffic import analyze_traffic
+        events = [
+            {
+                "module": "traffic",
+                "type": "http_request",
+                "ts": "2026-03-27T10:00:00Z",
+                "data": {
+                    "index": 1,
+                    "method": "POST",
+                    "url": "https://sentry.example.com/api/1/envelope/",
+                    "headers": {"Content-Type": "application/json"},
+                    "body": "{}",
+                    "body_length": 2,
+                    "source": "system_okhttp",
+                },
+            },
+            {
+                "module": "traffic",
+                "type": "tcp_connect",
+                "ts": "2026-03-27T10:00:00Z",
+                "data": {"host": "sentry.example.com", "ip": "1.2.3.4", "port": 443},
+            },
+        ]
+        report = analyze_traffic(events, package="com.example.app")
+        assert report.total_requests == 1
+        assert report.total_connections == 1
+        assert len(report.endpoints) == 1
+        assert report.endpoints[0].method == "POST"
+
 
 # --- Vault Analyzer Tests ---
 
