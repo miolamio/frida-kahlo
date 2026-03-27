@@ -13,7 +13,7 @@ from kahlo.acquire.extractor import APKExtractor, APKExtractorError, APKFormat, 
 # APK Extractor tests
 # ==============================================================
 
-YAKITORIYA_DIR = "/Users/codegeek/Lab/android/apps/yakitoriya"
+YAKITORIYA_DIR = os.environ.get("KAHLO_TEST_APK_DIR", "")
 
 
 class TestAPKFormatDetection:

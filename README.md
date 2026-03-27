@@ -1,23 +1,23 @@
 # Frida-Kahlo
 
-CLI-фреймворк для автоматизированного анализа Android-приложений через Frida.
+CLI framework for automated Android app analysis via Frida.
 
-Даёшь имя приложения — получаешь полный отчёт: сетевой трафик, хранилище, секреты, телеметрия, криптография, SDK-трекеры, и готовый thin-client для воспроизведения API.
+Give it an app name — get a full report: network traffic, storage, secrets, telemetry, cryptography, tracking SDKs, and a ready-to-use thin client for API replay.
 
-## Возможности
+## Features
 
-- **Полный пайплайн**: скачивание APK → установка → Frida-инструментация → анализ → отчёт
-- **4 столпа анализа**: трафик (5 уровней перехвата), хранилище/секреты, разведка окружения, сетевая модель
-- **Stealth**: антидетект Frida (рандомизация порта, bypass /proc/maps, ptrace, root detection)
-- **SSL Unpinning**: универсальный обход cert pinning (OkHttp, TrustManager, Conscrypt, WebView)
-- **Автоотчёт**: Markdown-отчёт + JSON API-спецификация + curl/Python replay-скрипты + thin client
-- **Live monitor**: интерактивный мониторинг с Rich-интерфейсом в терминале
-- **Auth capture**: перехват login-flow, расшифровка EncryptedSharedPreferences (Tink), JWT-декодинг
-- **Статический анализ**: сканирование jadx-декомпиляции на URL, секреты, крипто-паттерны
-- **Агрегация и diff**: объединение нескольких сканов, сравнение сессий
-- **Postman/Insomnia экспорт**: готовая коллекция запросов
+- **Full pipeline**: download APK → install → Frida instrumentation → analysis → report
+- **4 analysis pillars**: traffic (5 interception levels), storage/secrets, environment recon, network model
+- **Stealth**: anti-detection for Frida (port randomization, /proc/maps bypass, ptrace, root hiding)
+- **SSL Unpinning**: universal cert pinning bypass (OkHttp, TrustManager, Conscrypt, WebView)
+- **Auto-report**: Markdown report + JSON API spec + curl/Python replay scripts + thin client
+- **Live monitor**: interactive real-time monitoring with Rich terminal UI
+- **Auth capture**: login flow interception, EncryptedSharedPreferences decryption (Tink), JWT decoding
+- **Static analysis**: scan jadx decompilation for URLs, secrets, crypto patterns
+- **Aggregation & diff**: merge multiple scans, compare sessions
+- **Postman export**: ready-to-use request collection
 
-## Установка
+## Installation
 
 ```bash
 git clone https://github.com/yourname/frida-kahlo.git
@@ -25,152 +25,142 @@ cd frida-kahlo
 pip install -e ".[dev]"
 ```
 
-### Требования
+### Requirements
 
 - Python 3.11+
 - Frida 17.x (`pip install frida frida-tools`)
-- Android-устройство с root (Magisk) и USB-отладкой
-- frida-server на устройстве (`/data/local/tmp/frida-server`)
+- Rooted Android device (Magisk) with USB debugging
+- frida-server on device (`/data/local/tmp/frida-server`)
 
-### Опциональные зависимости
+### Optional dependencies
 
 ```bash
-pip install -e ".[acquire]"   # Playwright для скачивания APK
-pip install -e ".[static]"    # Androguard для расширенного анализа
+pip install -e ".[acquire]"   # Playwright for APK downloading
+pip install -e ".[static]"    # Androguard for extended analysis
 ```
 
-## Быстрый старт
+## Quick Start
 
 ```bash
-# Проверить устройство
+# Check device
 kahlo device
 
-# Запустить stealth frida-server
+# Start stealth frida-server
 kahlo frida-start
 
-# Полный анализ установленного приложения (30 сек)
+# Full scan of an installed app (30 seconds)
 kahlo scan com.example.app --duration 30
 
-# Сгенерировать отчёт
+# Generate report
 kahlo report sessions/session.json
 
-# Или всё сразу — от имени до отчёта
+# Or everything at once — from name to report
 kahlo analyze com.example.app --skip-fetch --duration 60
 ```
 
-## Команды
+## Commands
 
-| Команда | Описание |
-|---------|----------|
-| `kahlo analyze <app>` | Полный пайплайн: fetch → install → scan → analyze → report |
-| `kahlo scan <package>` | Инструментация + сбор событий (4 столпа) |
-| `kahlo monitor <package>` | Live-мониторинг с Rich-интерфейсом |
-| `kahlo report <session>` | Генерация отчётов из сессии |
-| `kahlo fetch <name>` | Скачать APK с зеркал (APKPure, APKCombo) |
-| `kahlo install <apk>` | Установить APK на устройство |
-| `kahlo device` | Статус устройства и frida-server |
-| `kahlo frida-start` | Запуск frida-server (stealth) |
-| `kahlo frida-stop` | Остановка frida-server |
-| `kahlo stealth-check <pkg>` | Проверка детекта Frida |
-| `kahlo manifest <apk>` | Парсинг AndroidManifest.xml |
-| `kahlo static <jadx_dir>` | Статический анализ jadx-выхода |
-| `kahlo aggregate <s1> <s2>` | Объединение нескольких сессий |
-| `kahlo diff <old> <new>` | Сравнение двух сессий |
-| `kahlo export-postman <s>` | Экспорт в Postman Collection |
+| Command | Description |
+|---------|-------------|
+| `kahlo analyze <app>` | Full pipeline: fetch → install → scan → analyze → report |
+| `kahlo scan <package>` | Instrumentation + event collection (4 pillars) |
+| `kahlo monitor <package>` | Live monitoring with Rich UI |
+| `kahlo report <session>` | Generate reports from session |
+| `kahlo fetch <name>` | Download APK from mirrors (APKPure, APKCombo) |
+| `kahlo install <apk>` | Install APK on device |
+| `kahlo device` | Device and frida-server status |
+| `kahlo frida-start` | Start frida-server (stealth mode) |
+| `kahlo frida-stop` | Stop frida-server |
+| `kahlo stealth-check <pkg>` | Check if app detects Frida |
+| `kahlo manifest <apk>` | Parse AndroidManifest.xml |
+| `kahlo static <jadx_dir>` | Static analysis of jadx output |
+| `kahlo aggregate <s1> <s2>` | Merge multiple sessions |
+| `kahlo diff <old> <new>` | Compare two sessions |
+| `kahlo export-postman <s>` | Export to Postman Collection |
 
-## Архитектура
+## Architecture
 
 ```
 kahlo/
-  cli.py                 15 CLI-команд (typer + rich)
-  pipeline.py            Оркестрация полного пайплайна
-  acquire/               Скачивание APK (Playwright), распаковка, установка
-  prepare/               Парсинг манифеста, jadx-декомпиляция
-  device/                ADB-обёртка, lifecycle frida-server
-  stealth/               Антидетект (4 уровня эскалации)
+  cli.py                 15 CLI commands (typer + rich)
+  pipeline.py            Full pipeline orchestration
+  acquire/               APK download (Playwright), extraction, installation
+  prepare/               Manifest parsing, jadx decompilation
+  device/                ADB wrapper, frida-server lifecycle
+  stealth/               Anti-detection (4 escalation levels)
   instrument/            FridaEngine, ScriptLoader, Session
-  analyze/               12 анализаторов (traffic, vault, recon, netmodel,
+  analyze/               12 analyzers (traffic, vault, recon, netmodel,
                          patterns, auth, jwt, static, decoder, aggregate,
                          diff, flows)
   report/                Markdown, API spec, replay, Postman
-  monitor.py             Live-мониторинг
+  monitor.py             Live monitoring
 
 scripts/
-  common.js              Общие утилиты
-  discovery.js           Обнаружение классов (OkHttp, Retrofit, WS, crypto)
-  bypass/stealth.js      Антидетект (/proc/maps, ptrace, root, файлы)
-  bypass/ssl_unpin.js    Универсальный SSL unpinning
-  hooks/traffic.js       Перехват трафика (5 уровней: OkHttp3, system OkHttp,
-                         HttpURLConnection, Conscrypt SSL, native SSL)
-  hooks/vault.js         Хранилище (SharedPreferences, SQLite, KeyStore, Tink)
-  hooks/recon.js         Разведка (device info, VPN, carrier, IP, apps)
-  hooks/netmodel.js      Криптография (Cipher, HMAC, Signature, TLS, UUID)
+  common.js              Shared utilities
+  discovery.js           Class discovery (OkHttp, Retrofit, WS, crypto)
+  bypass/stealth.js      Anti-detection (/proc/maps, ptrace, root, files)
+  bypass/ssl_unpin.js    Universal SSL unpinning
+  hooks/traffic.js       Traffic interception (5 levels: OkHttp3, system
+                         OkHttp v2, HttpURLConnection, Conscrypt SSL,
+                         native SSL_write/SSL_read)
+  hooks/vault.js         Storage (SharedPreferences, SQLite, KeyStore, Tink)
+  hooks/recon.js         Recon (device info, VPN, carrier, IP, apps)
+  hooks/netmodel.js      Crypto (Cipher, HMAC, Signature, TLS, UUID)
 ```
 
-## Четыре столпа анализа
+## Four Pillars of Analysis
 
-### Traffic — Сетевой трафик
-5 каскадных уровней перехвата: OkHttp3 Interceptor → system OkHttp v2 (HttpEngine) → HttpURLConnection → Conscrypt SSL stream → native SSL_write/SSL_read. Полные request/response с заголовками, телами, таймингами.
+### Traffic — Network traffic
+5 cascading interception levels: OkHttp3 Interceptor → system OkHttp v2 (HttpEngine) → HttpURLConnection → Conscrypt SSL stream → native SSL_write/SSL_read. Full request/response with headers, bodies, timing.
 
-### Vault — Хранилище и секреты
-SharedPreferences (включая EncryptedSharedPreferences с расшифровкой через Tink), SQLite, файловая система, KeyStore, AccountManager. Автоматическое извлечение токенов, API-ключей, device ID.
+### Vault — Storage & secrets
+SharedPreferences (including EncryptedSharedPreferences with Tink decryption), SQLite, file system, KeyStore, AccountManager. Automatic extraction of tokens, API keys, device IDs.
 
-### Recon — Разведка окружения
-Что приложение узнаёт о телефоне: Build.*, ANDROID_ID, оператор/PLMN, VPN-детекция, IP-сервисы, проверка установленных приложений, геолокация, сенсоры. Fingerprint appetite score (0-100).
+### Recon — Environment reconnaissance
+What the app learns about the device: Build.*, ANDROID_ID, carrier/PLMN, VPN detection, IP services, installed apps check, geolocation, sensors. Fingerprint appetite score (0-100).
 
-### Netmodel — Сетевая модель
-Криптографические операции: AES/RSA шифрование, HMAC-подписи, хеши, TLS-параметры, генерация nonce. Извлечение signing recipe для воспроизведения API.
+### Netmodel — Network model
+Cryptographic operations: AES/RSA encryption, HMAC signing, hashes, TLS parameters, nonce generation. Signing recipe extraction for API replay.
 
-## Результат анализа
+## Analysis Output
 
-После `kahlo scan` + `kahlo report` в папке сессии:
+After `kahlo scan` + `kahlo report`, the session directory contains:
 
 ```
 sessions/<session_id>_report/
-  report.md                Markdown-отчёт (Infrastructure, API, Secrets,
+  report.md                Markdown report (Infrastructure, API, Secrets,
                            Privacy, Crypto, SDKs, Auth Flow, Recreation)
-  api-spec.json            JSON-спецификация API
+  api-spec.json            JSON API specification
   postman_collection.json  Postman Collection v2.1
   replay/
-    client.py              Thin-client с per-host routing и signing
-    curl/                  curl-команды для каждого эндпоинта
-    python/                Python requests для каждого эндпоинта
+    client.py              Thin client with per-host routing and signing
+    curl/                  curl commands for each endpoint
+    python/                Python requests for each endpoint
 ```
 
-## Stealth — Антидетект
+## Stealth — Anti-Detection
 
-4 уровня эскалации:
+4 escalation levels:
 
-| Уровень | Техника | Покрытие |
-|---------|---------|----------|
-| 1. Basic | Random port + bypass.js | ~70% приложений |
-| 2. Bypass | + /proc/maps фильтрация, ptrace, root-hide | ~85% |
-| 3. hluda | Кастомный билд Frida без артефактов | ~95% |
-| 4. Gadget | frida-gadget (нет внешнего процесса) | ~99% |
+| Level | Technique | Coverage |
+|-------|-----------|----------|
+| 1. Basic | Random port + bypass.js | ~70% of apps |
+| 2. Bypass | + /proc/maps filtering, ptrace, root-hide | ~85% |
+| 3. hluda | Custom Frida build without artifacts | ~95% |
+| 4. Gadget | frida-gadget (no external process) | ~99% |
 
-## Пример: результаты анализа Yakitoriya
-
-За 30 секунд сканирования приложения доставки еды:
-
-- **1,348 событий** перехвачено
-- **6 серверов**: beacon2.yakitoriya.ru, api.wavesend.ru, sentry.inno.co, Firebase, Branch.io, AppsFlyer
-- **30 секретов**: API-ключи (Branch.io, AppsFlyer), HMAC signing key, AES encryption key/IV, Pushwoosh device ID
-- **11 SDK**: Firebase Crashlytics, Sentry 8.28.0, Pushwoosh 6.7.48, AppsFlyer 6.17.5, Branch.io, Yandex Metrica, и др.
-- **Fingerprint appetite**: 55/100 (читает SIM-оператора, SDK версию)
-- **Автогенерированный thin client** с per-host routing и HMAC-подписью
-
-## Тестирование
+## Testing
 
 ```bash
-# Все тесты (требуется устройство с frida-server)
+# All tests (requires device with frida-server)
 pytest tests/ -v --timeout=120
 
-# Только тесты без устройства
+# Tests without device
 pytest tests/ -v --timeout=60 -k "not (test_discovery or test_spawn or test_scan or test_system_okhttp)"
 ```
 
-405 тестов покрывают: ADB, frida-server lifecycle, stealth, instrument engine, все 4 хука, все 12 анализаторов, все 4 генератора отчётов, monitor, decoder, aggregate, diff, flows, postman.
+405 tests covering: ADB, frida-server lifecycle, stealth, instrument engine, all 4 hooks, all 12 analyzers, all 4 report generators, monitor, decoder, aggregate, diff, flows, postman.
 
-## Лицензия
+## License
 
 MIT

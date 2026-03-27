@@ -433,10 +433,10 @@ class TestStringExtraction:
         assert len(result.urls) == 0
 
     def test_extract_from_real_apk(self):
-        """Extract strings from real yakitoriya APK if available."""
-        apk_path = "/Users/codegeek/Lab/android/apps/yakitoriya/com.voltmobi.yakitoriya.apk"
-        if not os.path.isfile(apk_path):
-            pytest.skip("yakitoriya APK not available")
+        """Extract strings from real APK if available."""
+        apk_path = os.environ.get("KAHLO_TEST_APK_FILE", "")
+        if not apk_path or not os.path.isfile(apk_path):
+            pytest.skip("KAHLO_TEST_APK_FILE not set")
 
         from kahlo.prepare.strings import extract_strings
         result = extract_strings(apk_path)

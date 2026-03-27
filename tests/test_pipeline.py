@@ -75,22 +75,30 @@ class TestCLICommands:
         assert result.exit_code == 0
         assert "PATH" in result.output
 
-    def test_manifest_yakitoriya(self):
+    @pytest.mark.skipif(
+        not os.path.isdir(os.environ.get("KAHLO_TEST_APK_DIR", "")),
+        reason="KAHLO_TEST_APK_DIR not set"
+    )
+    def test_manifest_real_apk(self):
         from typer.testing import CliRunner
         from kahlo.cli import app
         runner = CliRunner()
-        result = runner.invoke(app, ["manifest", "/Users/codegeek/Lab/android/apps/yakitoriya"])
+        apk_dir = os.environ["KAHLO_TEST_APK_DIR"]
+        result = runner.invoke(app, ["manifest", apk_dir])
         assert result.exit_code == 0
-        assert "com.voltmobi.yakitoriya" in result.output
 
 
 class TestManifestAnalysis:
     """Test manifest analysis from CLI."""
 
-    def test_manifest_from_xapk_dir(self):
+    @pytest.mark.skipif(
+        not os.path.isdir(os.environ.get("KAHLO_TEST_APK_DIR", "")),
+        reason="KAHLO_TEST_APK_DIR not set"
+    )
+    def test_manifest_from_apk_dir(self):
         from kahlo.prepare.manifest import ManifestAnalyzer
         analyzer = ManifestAnalyzer()
-        info = analyzer.analyze("/Users/codegeek/Lab/android/apps/yakitoriya")
-        assert info.package_name == "com.voltmobi.yakitoriya"
-        assert "android.permission.INTERNET" in info.permissions
-        assert info.version_name is not None
+        apk_dir = os.environ["KAHLO_TEST_APK_DIR"]
+        info = analyzer.analyze(apk_dir)
+        assert info.package_name is not None
+        assert len(info.permissions) > 0

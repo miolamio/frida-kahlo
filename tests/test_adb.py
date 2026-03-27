@@ -1,4 +1,5 @@
 """Tests for ADB wrapper. Requires connected Android device."""
+import os
 import pytest
 from kahlo.device.adb import ADB
 
@@ -17,9 +18,12 @@ class TestADBDevices:
         devices = adb.devices()
         assert len(devices) >= 1
 
-    def test_device_has_serial(self, adb):
+    def test_device_has_expected_serial(self, adb):
+        expected = os.environ.get("KAHLO_TEST_DEVICE", "")
+        if not expected:
+            pytest.skip("KAHLO_TEST_DEVICE not set")
         devices = adb.devices()
-        assert any(d.serial == "28e37107" for d in devices)
+        assert any(d.serial == expected for d in devices)
 
 
 class TestADBShell:
@@ -39,7 +43,7 @@ class TestADBShell:
 class TestADBDeviceInfo:
     def test_device_info_model(self, adb):
         info = adb.get_device_info()
-        assert info.model == "Redmi Note 5A"
+        assert info.model  # non-empty
 
     def test_device_info_rooted(self, adb):
         info = adb.get_device_info()
@@ -56,6 +60,6 @@ class TestADBPackages:
         assert isinstance(packages, list)
         assert len(packages) > 0
 
-    def test_list_packages_contains_magisk(self, adb):
-        packages = adb.list_packages()
-        assert "com.topjohnwu.magisk" in packages
+    def test_list_third_party_packages(self, adb):
+        packages = adb.list_packages(third_party_only=True)
+        assert isinstance(packages, list)

@@ -10,7 +10,7 @@ Language: Russian for UI, English for code and comments.
 ```bash
 pip install -e ".[dev]"
 kahlo device                # device status
-kahlo analyze com.voltmobi.yakitoriya --skip-fetch --duration 60  # full pipeline
+kahlo analyze com.example.app --skip-fetch --duration 60  # full pipeline
 ```
 
 ## Architecture
@@ -28,8 +28,6 @@ kahlo analyze com.voltmobi.yakitoriya --skip-fetch --duration 60  # full pipelin
 - `scripts/` — Frida JS modules (hooks, bypass, discovery)
 - `sessions/` — analysis results (gitignored)
 - `skills/` — Claude Code skills (android-analysis, android-replay)
-- `.development/` — design docs, checklist
-- `.research/` — research findings
 
 ## CLI Commands
 
@@ -75,17 +73,11 @@ pytest tests/ -v --timeout=120
 kahlo device          # requires connected Android device
 ```
 
-## Test Device
+## Requirements
 
-- Redmi Note 5A (28e37107), Android 16, root via Magisk
-- frida-server at /data/local/tmp/frida-server
-- Test app: yakitoriya (com.voltmobi.yakitoriya)
-- APK files: /Users/codegeek/Lab/android/apps/yakitoriya/
-
-## Tools
-
-- jadx: /opt/homebrew/bin/jadx
-- Python 3.12, frida 17.x, playwright 1.50
+- Rooted Android device with USB debugging
+- frida-server on device at /data/local/tmp/frida-server
+- Python 3.11+, frida 17.x, playwright 1.50 (optional)
 
 ## Conventions
 
