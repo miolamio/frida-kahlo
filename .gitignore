@@ -10,3 +10,6 @@ sessions/
 *.apkm
 .DS_Store
 .claude/
+.development/
+.research/
+docs/plans/
