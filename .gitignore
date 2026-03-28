@@ -10,6 +10,8 @@ sessions/
 *.apkm
 .DS_Store
 .claude/
+.playwright-cli/
+.skalpel/
 .development/
 .research/
 docs/plans/

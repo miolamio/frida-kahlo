@@ -1,3 +1,0 @@
-[     767ms] [ERROR] Failed to load resource: the server responded with a status of 403 () @ https://www.apkmirror.com/?post_type=app_release&searchtype=apk&s=perekrestok:0
-[    1023ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_CLOSED @ https://static.cloudflareinsights.com/beacon.min.js/v8c78df7c7c0f484497ecbca7046644da1771523124516:0
-[    1152ms] [ERROR] Failed to load resource: the server responded with a status of 403 () @ https://www.apkmirror.com/favicon.ico:0
