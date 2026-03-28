@@ -14,7 +14,8 @@
     }
 
     var hiddenPaths = ["frida", "magisk", "/su", "supersu", "busybox",
-                       "daemonsu", "Superuser", "titanium"];
+                       "daemonsu", "Superuser", "titanium", ".magisk",
+                       "kernelsu", "superuser"];
 
     function shouldHide(path) {
         if (!path) return false;
@@ -280,17 +281,28 @@
                 };
             });
 
-            // PackageManager — hide Magisk/SuperSU/KernelSU
+            // PackageManager — hide root/hack/xposed packages
+            // Extended list from RootBeer's Const.java (N7.a)
             _stealthSafeHook("android.app.ApplicationPackageManager", function(cls) {
                 try {
+                    var hiddenPackages = [
+                        "com.topjohnwu.magisk", "eu.chainfire.supersu",
+                        "me.weishu.kernelsu", "com.noshufou.android.su",
+                        "com.noshufou.android.su.elite", "com.thirdparty.superuser",
+                        "com.koushikdutta.superuser", "com.yellowes.su",
+                        "com.kingroot.kinguser", "com.kingo.root",
+                        "com.smedialink.oneclickroot", "com.zhiqupk.root.global",
+                        "com.alephzain.framaroot",
+                        // "Potentially dangerous" apps (RootBeer list)
+                        "com.koushikdutta.rommanager", "com.koushikdutta.rommanager.license",
+                        "com.dimonvideo.luckypatcher", "com.chelpus.lackypatch",
+                        "com.chelpus.luckypatcher", "com.blackmartalpha",
+                        "org.blackmart.market", "com.allinone.free",
+                        "com.solohsu.android.edxp.manager", "org.meowcat.edxposed.manager",
+                        "com.xmodgame", "cc.madkite.freedom",
+                        "catch_.me_.if_.you_.can_"
+                    ];
                     cls.getPackageInfo.overload('java.lang.String', 'int').implementation = function(name, flags) {
-                        var hiddenPackages = [
-                            "com.topjohnwu.magisk",
-                            "eu.chainfire.supersu",
-                            "me.weishu.kernelsu",
-                            "com.noshufou.android.su",
-                            "com.thirdparty.superuser"
-                        ];
                         for (var i = 0; i < hiddenPackages.length; i++) {
                             if (name === hiddenPackages[i]) {
                                 throw Java.use("android.content.pm.PackageManager$NameNotFoundException").$new();
@@ -310,6 +322,82 @@
                         return this.get(key);
                     };
                 } catch(e) {}
+            });
+
+            // === 7b. Runtime.exec bypass — block root-probing commands ===
+            // Many apps run "getprop", "mount", or ["which","su"] to detect root
+            // instead of using Java File.exists or SystemProperties.
+            _stealthSafeHook("java.lang.Runtime", function(cls) {
+                try {
+                    cls.exec.overload('java.lang.String').implementation = function(cmd) {
+                        if (cmd && (cmd === "getprop" || cmd === "mount" ||
+                                    cmd.indexOf("which su") !== -1)) {
+                            return this.exec("echo");
+                        }
+                        return this.exec(cmd);
+                    };
+                } catch(e) {}
+                try {
+                    cls.exec.overload('[Ljava.lang.String;').implementation = function(cmdArr) {
+                        if (cmdArr && cmdArr.length > 0) {
+                            var joined = Array.prototype.join.call(cmdArr, " ");
+                            if (joined.indexOf("which") !== -1 && joined.indexOf("su") !== -1) {
+                                return this.exec("echo");
+                            }
+                        }
+                        return this.exec(cmdArr);
+                    };
+                } catch(e) {}
+            });
+
+            // === 7c. Build.TAGS bypass — spoof test-keys to release-keys ===
+            try {
+                var Build = Java.use("android.os.Build");
+                var tagsField = Build.class.getDeclaredField("TAGS");
+                tagsField.setAccessible(true);
+                var currentTags = tagsField.get(null);
+                if (currentTags && currentTags.toString().indexOf("test-keys") !== -1) {
+                    tagsField.set(null, Java.use("java.lang.String").$new("release-keys"));
+                }
+            } catch(e) {}
+
+            // === 7d. RootBeerNative JNI bypass ===
+            _stealthSafeHook("com.scottyab.rootbeer.RootBeerNative", function(cls) {
+                try {
+                    cls.checkForRoot.implementation = function(paths) { return 0; };
+                } catch(e) {}
+            });
+        });
+    } catch(e) {}
+
+    // === 8. SharedPreferences root flag interception ===
+    // Many apps store root detection result in prefs (key_is_rooted, is_rooted, root_detected, etc.)
+    // Intercept putBoolean to block writing true for root-related keys
+    try {
+        Java.perform(function() {
+            var rootKeys = ["key_is_rooted", "is_rooted", "root_detected", "rooted",
+                            "device_rooted", "isRooted", "isDeviceRooted"];
+
+            _stealthSafeHook("android.app.SharedPreferencesImpl$EditorImpl", function(cls) {
+                cls.putBoolean.implementation = function(key, value) {
+                    for (var i = 0; i < rootKeys.length; i++) {
+                        if (key === rootKeys[i] && value === true) {
+                            return this.putBoolean(key, false);
+                        }
+                    }
+                    return this.putBoolean(key, value);
+                };
+            });
+
+            _stealthSafeHook("android.app.SharedPreferencesImpl", function(cls) {
+                cls.getBoolean.implementation = function(key, defValue) {
+                    for (var i = 0; i < rootKeys.length; i++) {
+                        if (key === rootKeys[i]) {
+                            return false;
+                        }
+                    }
+                    return this.getBoolean(key, defValue);
+                };
             });
         });
     } catch(e) {}

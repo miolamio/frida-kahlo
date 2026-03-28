@@ -1,0 +1,266 @@
+- generic [ref=e2]:
+  - region
+  - generic [ref=e3]:
+    - link "Skip to content" [ref=e4] [cursor=pointer]:
+      - /url: "#start-of-content"
+    - banner [ref=e6]:
+      - heading "Navigation Menu" [level=2] [ref=e7]
+      - generic [ref=e8]:
+        - link "Homepage" [ref=e10] [cursor=pointer]:
+          - /url: /
+          - img [ref=e11]
+        - generic [ref=e13]:
+          - navigation "Global" [ref=e16]:
+            - list [ref=e17]:
+              - listitem [ref=e18]:
+                - button "Platform" [ref=e20] [cursor=pointer]:
+                  - text: Platform
+                  - img [ref=e21]
+              - listitem [ref=e23]:
+                - button "Solutions" [ref=e25] [cursor=pointer]:
+                  - text: Solutions
+                  - img [ref=e26]
+              - listitem [ref=e28]:
+                - button "Resources" [ref=e30] [cursor=pointer]:
+                  - text: Resources
+                  - img [ref=e31]
+              - listitem [ref=e33]:
+                - button "Open Source" [ref=e35] [cursor=pointer]:
+                  - text: Open Source
+                  - img [ref=e36]
+              - listitem [ref=e38]:
+                - button "Enterprise" [ref=e40] [cursor=pointer]:
+                  - text: Enterprise
+                  - img [ref=e41]
+              - listitem [ref=e43]:
+                - link "Pricing" [ref=e44] [cursor=pointer]:
+                  - /url: https://github.com/pricing
+                  - generic [ref=e45]: Pricing
+          - generic [ref=e46]:
+            - button "Search or jump to…" [ref=e49] [cursor=pointer]:
+              - img [ref=e51]
+            - link "Sign in" [ref=e54] [cursor=pointer]:
+              - /url: /login?return_to=https%3A%2F%2Fgithub.com%2FMindTheGapps%2F16.0.0-arm64%2Freleases%2Ftag%2FMindTheGapps-16.0.0-arm64-20260216_221300
+            - link "Sign up" [ref=e55] [cursor=pointer]:
+              - /url: /signup?ref_cta=Sign+up&ref_loc=header+logged+out&ref_page=%2F%3Cuser-name%3E%2F%3Crepo-name%3E%2Freleases%2Fshow&source=header-repo&source_repo=MindTheGapps%2F16.0.0-arm64
+            - button "Appearance settings" [ref=e58] [cursor=pointer]:
+              - img
+  - main [ref=e62]:
+    - generic [ref=e63]:
+      - generic [ref=e64]:
+        - generic [ref=e66]:
+          - img [ref=e67]
+          - link "MindTheGapps" [ref=e70] [cursor=pointer]:
+            - /url: /MindTheGapps
+          - generic [ref=e71]: /
+          - strong [ref=e72]:
+            - link "16.0.0-arm64" [ref=e73] [cursor=pointer]:
+              - /url: /MindTheGapps/16.0.0-arm64
+          - generic [ref=e74]: Public
+        - generic [ref=e75]:
+          - list:
+            - listitem [ref=e76]:
+              - link "You must be signed in to change notification settings" [ref=e77] [cursor=pointer]:
+                - /url: /login?return_to=%2FMindTheGapps%2F16.0.0-arm64
+                - img [ref=e78]
+                - text: Notifications
+            - listitem [ref=e80]:
+              - link "Fork 1" [ref=e81] [cursor=pointer]:
+                - /url: /login?return_to=%2FMindTheGapps%2F16.0.0-arm64
+                - img [ref=e82]
+                - text: Fork
+                - generic "1" [ref=e84]
+            - listitem [ref=e85]:
+              - link "You must be signed in to star a repository" [ref=e87] [cursor=pointer]:
+                - /url: /login?return_to=%2FMindTheGapps%2F16.0.0-arm64
+                - img [ref=e88]
+                - text: Star
+                - generic "77 users starred this repository" [ref=e90]: "77"
+      - navigation "Repository" [ref=e91]:
+        - list [ref=e92]:
+          - listitem [ref=e93]:
+            - link "Code" [ref=e94] [cursor=pointer]:
+              - /url: /MindTheGapps/16.0.0-arm64/tree/MindTheGapps-16.0.0-arm64-20260216_221300
+              - img [ref=e95]
+              - generic [ref=e97]: Code
+          - listitem [ref=e98]:
+            - link "Issues 2" [ref=e99] [cursor=pointer]:
+              - /url: /MindTheGapps/16.0.0-arm64/issues
+              - img [ref=e100]
+              - generic [ref=e103]: Issues
+              - generic "2" [ref=e104]
+          - listitem [ref=e105]:
+            - link "Pull requests" [ref=e106] [cursor=pointer]:
+              - /url: /MindTheGapps/16.0.0-arm64/pulls
+              - img [ref=e107]
+              - generic [ref=e109]: Pull requests
+          - listitem [ref=e110]:
+            - link "Actions" [ref=e111] [cursor=pointer]:
+              - /url: /MindTheGapps/16.0.0-arm64/actions
+              - img [ref=e112]
+              - generic [ref=e114]: Actions
+          - listitem [ref=e115]:
+            - link "Projects" [ref=e116] [cursor=pointer]:
+              - /url: /MindTheGapps/16.0.0-arm64/projects
+              - img [ref=e117]
+              - generic [ref=e119]: Projects
+          - listitem [ref=e120]:
+            - link "Security" [ref=e121] [cursor=pointer]:
+              - /url: /MindTheGapps/16.0.0-arm64/security
+              - img [ref=e122]
+              - generic [ref=e124]: Security
+          - listitem [ref=e125]:
+            - link "Insights" [ref=e126] [cursor=pointer]:
+              - /url: /MindTheGapps/16.0.0-arm64/pulse
+              - img [ref=e127]
+              - generic [ref=e129]: Insights
+    - generic [ref=e132]:
+      - navigation "Breadcrumb" [ref=e133]:
+        - list [ref=e134]:
+          - listitem [ref=e135]:
+            - link "Releases" [ref=e136] [cursor=pointer]:
+              - /url: /MindTheGapps/16.0.0-arm64/releases
+          - listitem [ref=e137]:
+            - link "MindTheGapps-16.0.0-arm64-20260216_221300" [ref=e138]:
+              - /url: /MindTheGapps/16.0.0-arm64/releases/tag/MindTheGapps-16.0.0-arm64-20260216_221300
+      - generic [ref=e140]:
+        - generic [ref=e141]:
+          - generic [ref=e142]:
+            - generic [ref=e144]:
+              - heading "MindTheGapps-16.0.0-arm64-20260216_221300" [level=1] [ref=e145]
+              - link "Latest" [ref=e147] [cursor=pointer]:
+                - /url: /MindTheGapps/16.0.0-arm64/releases/latest
+                - generic [ref=e148]: Latest
+            - button "Compare" [ref=e152] [cursor=pointer]:
+              - generic [ref=e153]:
+                - generic [ref=e154]: Compare
+                - generic:
+                  - img
+          - generic [ref=e156]:
+            - generic [ref=e157]:
+              - img "@luk1337" [ref=e158]
+              - link "luk1337" [ref=e159] [cursor=pointer]:
+                - /url: /luk1337
+              - text: released this 16 Feb 22:15 Feb 17
+            - link "Tag MindTheGapps-16.0.0-arm64-20260216_221300" [ref=e161] [cursor=pointer]:
+              - /url: /MindTheGapps/16.0.0-arm64/tree/MindTheGapps-16.0.0-arm64-20260216_221300
+              - generic [ref=e162]:
+                - img "Tag" [ref=e163]
+                - text: MindTheGapps-16.0.0-arm64-20260216_221300
+            - link "Commit ace8b4c" [ref=e166] [cursor=pointer]:
+              - /url: /MindTheGapps/16.0.0-arm64/commit/ace8b4c3a942087eaec2cb4ad319036875ae0241
+              - img "Commit" [ref=e167]
+              - code [ref=e169]: ace8b4c
+          - paragraph [ref=e171]:
+            - link "https://gitlab.com/MindTheGapps/vendor_gapps/-/tree/4d507e229e95d97d355e9ebaae64eb0d05236f92" [ref=e172] [cursor=pointer]:
+              - /url: https://gitlab.com/MindTheGapps/vendor_gapps/-/tree/4d507e229e95d97d355e9ebaae64eb0d05236f92
+        - generic [ref=e173]:
+          - group [ref=e176]:
+            - button "Assets 5" [expanded] [ref=e177] [cursor=pointer]:
+              - generic [ref=e178]:
+                - generic [ref=e179]: Assets
+                - generic "5" [ref=e180]
+            - list [ref=e183]:
+              - listitem [ref=e184]:
+                - generic [ref=e185]:
+                  - img [ref=e186]
+                  - link "MindTheGapps-16.0.0-arm64-20260216_221300.zip" [ref=e188] [cursor=pointer]:
+                    - /url: /MindTheGapps/16.0.0-arm64/releases/download/MindTheGapps-16.0.0-arm64-20260216_221300/MindTheGapps-16.0.0-arm64-20260216_221300.zip
+                    - generic [ref=e189]: MindTheGapps-16.0.0-arm64-20260216_221300.zip
+                - generic [ref=e191]:
+                  - generic [ref=e192]:
+                    - generic [ref=e194]: sha256:2464522bc55e2c1cc397557d8c87cf71afc03647fdbb358bc5c010cb2953a693
+                    - button "Copy to clipboard digest for MindTheGapps-16.0.0-arm64-20260216_221300.zip" [ref=e196] [cursor=pointer]:
+                      - img [ref=e197]
+                  - generic [ref=e201]: 488 MB
+                  - generic [ref=e202]: 2026-02-16T22:15:07ZFeb 17
+              - listitem [ref=e203]:
+                - generic [ref=e204]:
+                  - img [ref=e205]
+                  - link "MindTheGapps-16.0.0-arm64-20260216_221300.zip.sha256sum" [ref=e207] [cursor=pointer]:
+                    - /url: /MindTheGapps/16.0.0-arm64/releases/download/MindTheGapps-16.0.0-arm64-20260216_221300/MindTheGapps-16.0.0-arm64-20260216_221300.zip.sha256sum
+                    - generic [ref=e208]: MindTheGapps-16.0.0-arm64-20260216_221300.zip.sha256sum
+                - generic [ref=e210]:
+                  - generic [ref=e211]:
+                    - generic [ref=e213]: sha256:634f03ab25b53748b741c66aac295b31f114d781e3b55f9f3083ae76c3bc1c3c
+                    - button "Copy to clipboard digest for MindTheGapps-16.0.0-arm64-20260216_221300.zip.sha256sum" [ref=e215] [cursor=pointer]:
+                      - img [ref=e216]
+                  - generic [ref=e220]: 112 Bytes
+                  - generic [ref=e221]: 2026-02-16T22:15:07ZFeb 17
+              - listitem [ref=e222]:
+                - generic [ref=e223]:
+                  - img [ref=e224]
+                  - link "release.x509.pem" [ref=e226] [cursor=pointer]:
+                    - /url: /MindTheGapps/16.0.0-arm64/releases/download/MindTheGapps-16.0.0-arm64-20260216_221300/release.x509.pem
+                    - generic [ref=e227]: release.x509.pem
+                - generic [ref=e229]:
+                  - generic [ref=e230]:
+                    - generic [ref=e232]: sha256:efd45e07d29a13db60f6db46a6d8b7c42f65ed657b274a3e946c850766bc1399
+                    - button "Copy to clipboard digest for release.x509.pem" [ref=e234] [cursor=pointer]:
+                      - img [ref=e235]
+                  - generic [ref=e239]: 1.43 KB
+                  - generic [ref=e240]: 2026-02-16T22:15:07ZFeb 17
+              - listitem [ref=e241]:
+                - generic [ref=e242]:
+                  - img [ref=e243]
+                  - link "Source code (zip)" [ref=e245] [cursor=pointer]:
+                    - /url: /MindTheGapps/16.0.0-arm64/archive/refs/tags/MindTheGapps-16.0.0-arm64-20260216_221300.zip
+                    - generic [ref=e246]: Source code
+                    - generic [ref=e247]: (zip)
+                - generic [ref=e249]: 2023-09-18T16:22:20ZSep 18, 2023
+              - listitem [ref=e250]:
+                - generic [ref=e251]:
+                  - img [ref=e252]
+                  - link "Source code (tar.gz)" [ref=e254] [cursor=pointer]:
+                    - /url: /MindTheGapps/16.0.0-arm64/archive/refs/tags/MindTheGapps-16.0.0-arm64-20260216_221300.tar.gz
+                    - generic [ref=e255]: Source code
+                    - generic [ref=e256]: (tar.gz)
+                - generic [ref=e258]: 2023-09-18T16:22:20ZSep 18, 2023
+          - generic [ref=e260]:
+            - generic [ref=e262]:
+              - 'button "thumbs up (11): luk1337, 04:22PM on September 18, 2023" [disabled] [ref=e263]':
+                - generic [ref=e264]: 👍
+                - generic [ref=e265]: "11"
+              - 'button "heart (9): luk1337, 04:22PM on September 18, 2023" [disabled] [ref=e266]':
+                - generic [ref=e267]: ❤️
+                - generic [ref=e268]: "9"
+              - 'button "eyes (3): luk1337, 04:22PM on September 18, 2023" [disabled] [ref=e269]':
+                - generic [ref=e270]: 👀
+                - generic [ref=e271]: "3"
+            - generic [ref=e272]: 20 people reacted
+  - contentinfo [ref=e273]:
+    - heading "Footer" [level=2] [ref=e274]
+    - generic [ref=e275]:
+      - generic [ref=e276]:
+        - link "GitHub Homepage" [ref=e277] [cursor=pointer]:
+          - /url: https://github.com
+          - img [ref=e278]
+        - generic [ref=e280]: © 2026 GitHub, Inc.
+      - navigation "Footer" [ref=e281]:
+        - heading "Footer navigation" [level=3] [ref=e282]
+        - list "Footer navigation" [ref=e283]:
+          - listitem [ref=e284]:
+            - link "Terms" [ref=e285] [cursor=pointer]:
+              - /url: https://docs.github.com/site-policy/github-terms/github-terms-of-service
+          - listitem [ref=e286]:
+            - link "Privacy" [ref=e287] [cursor=pointer]:
+              - /url: https://docs.github.com/site-policy/privacy-policies/github-privacy-statement
+          - listitem [ref=e288]:
+            - link "Security" [ref=e289] [cursor=pointer]:
+              - /url: https://github.com/security
+          - listitem [ref=e290]:
+            - link "Status" [ref=e291] [cursor=pointer]:
+              - /url: https://www.githubstatus.com/
+          - listitem [ref=e292]:
+            - link "Community" [ref=e293] [cursor=pointer]:
+              - /url: https://github.community/
+          - listitem [ref=e294]:
+            - link "Docs" [ref=e295] [cursor=pointer]:
+              - /url: https://docs.github.com/
+          - listitem [ref=e296]:
+            - link "Contact" [ref=e297] [cursor=pointer]:
+              - /url: https://support.github.com?tags=dotcom-footer
+          - listitem [ref=e298]:
+            - button "Manage cookies" [ref=e300] [cursor=pointer]
+          - listitem [ref=e301]:
+            - button "Do not share my personal information" [ref=e303] [cursor=pointer]
