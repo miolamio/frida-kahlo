@@ -90,9 +90,7 @@ _SECRET_KEY_PATTERNS = [
 
 # Value patterns
 _JWT_RE = re.compile(r'^eyJ[A-Za-z0-9_-]{10,}')
-_UUID_RE = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.I)
 _HEX_KEY_RE = re.compile(r'^[0-9a-f]{32,}$', re.I)
-_LONG_BASE64_RE = re.compile(r'^[A-Za-z0-9+/=]{20,}$')
 
 # Known SDK key names that are interesting
 _KNOWN_INTERESTING_KEYS = {
@@ -191,8 +189,6 @@ def _human_readable_name(key: str, file: str) -> str:
 def _categorize_known_key(key: str, value: str) -> tuple[str, str]:
     """Categorize a known interesting key."""
     if "id" in key.lower() or "hwid" in key.lower():
-        if _UUID_RE.match(value):
-            return "device_id", "medium"
         return "device_id", "medium"
     if "url" in key.lower():
         return "config", "low"

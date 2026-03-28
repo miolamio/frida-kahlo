@@ -1,4 +1,6 @@
 """Frida-Kahlo CLI."""
+from __future__ import annotations
+
 import typer
 from rich.console import Console
 from rich.table import Table

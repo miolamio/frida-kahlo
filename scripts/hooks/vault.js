@@ -664,15 +664,20 @@
                     };
                 } catch(e) {}
 
-                // aliases
+                // aliases — call once, collect into list, then build a fresh Enumeration to return
                 try {
                     cls.aliases.implementation = function() {
                         var result = this.aliases();
                         try {
+                            // Consume the enumeration once to collect aliases
+                            var ArrayList = Java.use("java.util.ArrayList");
+                            var Collections = Java.use("java.util.Collections");
+                            var list = ArrayList.$new();
                             var aliasList = [];
-                            var enumCopy = this.aliases.call(this);
-                            while (enumCopy.hasMoreElements()) {
-                                aliasList.push(enumCopy.nextElement().toString());
+                            while (result.hasMoreElements()) {
+                                var alias = result.nextElement().toString();
+                                aliasList.push(alias);
+                                list.add(alias);
                             }
                             if (aliasList.length > 0) {
                                 sendEvent("vault", "keystore_enum", {
@@ -680,8 +685,12 @@
                                     count: aliasList.length
                                 });
                             }
-                        } catch(e) {}
-                        return result;
+                            // Return a fresh enumeration from the collected list
+                            return Collections.enumeration(list);
+                        } catch(e) {
+                            // On error, call again to return a valid enumeration
+                            return this.aliases();
+                        }
                     };
                 } catch(e) {}
             });

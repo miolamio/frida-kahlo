@@ -21,7 +21,7 @@ kahlo = "kahlo.cli:app"
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "pytest-timeout>=2.0"]
 static = ["androguard>=4.0"]
-acquire = ["playwright>=1.40"]
+acquire = ["playwright>=1.40", "playwright-stealth>=1.0"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["kahlo"]

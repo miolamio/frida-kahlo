@@ -5,8 +5,8 @@
 (function() {
     "use strict";
 
-    // === Helper ===
-    function safeHook(className, callback) {
+    // === Helper (local to stealth — renamed to avoid confusion with common.js safeHook) ===
+    function _stealthSafeHook(className, callback) {
         try {
             var clazz = Java.use(className);
             callback(clazz);
@@ -235,6 +235,22 @@
                     }
                 }
             });
+
+            // fclose — clean up statusFiles to prevent unbounded growth
+            var fclosePtr = Module.findExportByName("libc.so", "fclose");
+            if (fclosePtr) {
+                Interceptor.attach(fclosePtr, {
+                    onEnter: function(args) {
+                        var fp = args[0];
+                        if (!fp.isNull()) {
+                            var key = fp.toString();
+                            if (key in statusFiles) {
+                                delete statusFiles[key];
+                            }
+                        }
+                    }
+                });
+            }
         }
     } catch(e) {}
 
@@ -243,7 +259,7 @@
         Java.perform(function() {
 
             // RootBeer bypass
-            safeHook("com.scottyab.rootbeer.RootBeer", function(cls) {
+            _stealthSafeHook("com.scottyab.rootbeer.RootBeer", function(cls) {
                 var methods = ["isRooted", "isRootedWithoutBusyBoxCheck",
                               "checkForSuBinary", "checkForBusyBoxBinary",
                               "checkForRootManagementApps", "checkForDangerousProps",
@@ -256,7 +272,7 @@
             });
 
             // Generic root check — File.exists
-            safeHook("java.io.File", function(cls) {
+            _stealthSafeHook("java.io.File", function(cls) {
                 cls.exists.implementation = function() {
                     var path = this.getAbsolutePath();
                     if (shouldHide(path)) return false;
@@ -265,7 +281,7 @@
             });
 
             // PackageManager — hide Magisk/SuperSU/KernelSU
-            safeHook("android.app.ApplicationPackageManager", function(cls) {
+            _stealthSafeHook("android.app.ApplicationPackageManager", function(cls) {
                 try {
                     cls.getPackageInfo.overload('java.lang.String', 'int').implementation = function(name, flags) {
                         var hiddenPackages = [
@@ -286,7 +302,7 @@
             });
 
             // System property check for ro.debuggable, ro.secure
-            safeHook("android.os.SystemProperties", function(cls) {
+            _stealthSafeHook("android.os.SystemProperties", function(cls) {
                 try {
                     cls.get.overload('java.lang.String').implementation = function(key) {
                         if (key === "ro.debuggable") return "0";

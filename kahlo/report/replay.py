@@ -109,22 +109,22 @@ def _host_to_prefix(hostname: str) -> str:
     """
     hostname = hostname.lower()
 
-    # Known aliases: map hostname patterns to canonical short names
-    _KNOWN = [
-        ("wavesend", "pushwoosh"),
-        ("appsflyersdk", "appsflyer"),
-        ("appsflyer", "appsflyer"),
-        ("crashlytics", "crashlytics"),
-        ("firebase", "firebase"),
-        ("branch", "branch"),
-        ("sentry", "sentry"),
-        ("amplitude", "amplitude"),
-        ("mixpanel", "mixpanel"),
-        ("adjust", "adjust"),
-        ("appmetrica", "appmetrica"),
-    ]
+    # Known aliases: map hostname patterns to canonical short names (dict for O(1) lookup)
+    _KNOWN: dict[str, str] = {
+        "wavesend": "pushwoosh",
+        "appsflyersdk": "appsflyer",
+        "appsflyer": "appsflyer",
+        "crashlytics": "crashlytics",
+        "firebase": "firebase",
+        "branch": "branch",
+        "sentry": "sentry",
+        "amplitude": "amplitude",
+        "mixpanel": "mixpanel",
+        "adjust": "adjust",
+        "appmetrica": "appmetrica",
+    }
 
-    for pattern, name in _KNOWN:
+    for pattern, name in _KNOWN.items():
         if pattern in hostname:
             return name
 
